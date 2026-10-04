@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mouse">
+<title>Mouse</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #12205A;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  #c { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  #overlay {
+    position: fixed; inset: 0; display: flex; box-sizing: border-box;
+    padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+    overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+    color: #E9EEFF; background: #12205A;
+  }
+  #overlay.hidden { display: none; }
+  #panel { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+  #overlay h1 { margin: 0; font-size: 34px; font-weight: 600; }
+  #overlay p  { margin: 0; font-size: 16px; line-height: 1.45; max-width: 34ch; opacity: .7; }
+  #stats { display: none; flex-direction: column; align-items: center; gap: 10px; }
+  #stats.on { display: flex; }
+  #stats p { max-width: 42ch; opacity: .85; }
+  .buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 12px; }
+  .btn {
+    padding: 10px 22px; border-radius: 999px;
+    border: 1.5px solid rgba(233,238,255,.5); background: none;
+    color: #E9EEFF; font: inherit; font-size: 16px;
+  }
+  .btn.solid { background: #E9EEFF; color: #12205A; border-color: #E9EEFF; }
+  .btn.hidden { display: none; }
+  .btn:focus-visible { outline: 2px solid #FFDF5C; outline-offset: 3px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="overlay">
+ <div id="panel">
+  <h1 id="title">Tap to start</h1>
+  <p id="hint">Lay the iPad flat. To pause, hold the top‑left corner for two seconds.</p>
+  <div id="stats">
+    <canvas id="map"></canvas>
+    <p id="summary"></p>
+  </div>
+  <div class="buttons">
+    <button id="again" class="btn solid hidden" type="button">Play again</button>
+    <button id="mute" class="btn" type="button">Sound on</button>
+    <button id="share" class="btn hidden" type="button">Share log</button>
+  </div>
+ </div>
+</div>
+
+<script>
+// ---------- tuning ----------
+const T = {
+  sessionS: 5 * 60,      // play time before the wind-down; the next catch after this ends the session
+  idleS: 3 * 60,         // no paw on the screen for this long -> pause
+  innerR: 1.4,           // catch zone radius, x mouse size
+  outerR: 2.6,           // near-miss zone radius, x mouse size: the mouse bolts
+  maxEscapes: 2,         // escapes in a row before a near miss counts as a catch again
+  hideChance: 0.25,      // chance a pause ends with a run to the box
+  hideCooldownS: 12,     // minimum gap between hides
+  freezeChance: 0.25     // chance a run ends in a dead freeze rather than a sniffing pause
+};
+
+// ---------- colours (cats are dichromats: blue/yellow contrast, nothing red/green) ----------
+const C = {
+  bg: '#12205A', mouse: '#FFDF5C', earInner: '#FFF3B0',
+  eye: '#0A1140', whisker: 'rgba(255,243,176,.7)', ring: '#7EE8FF',
+  box: '#3455B5', boxEdge: '#8FA6F5'
+};
+
+const $ = id => document.getElementById(id);
+const canvas = $('c'), ctx = canvas.getContext('2d');
+const overlay = $('overlay'), title = $('title'), hint = $('hint');
+const muteBtn = $('mute'), againBtn = $('again'), shareBtn = $('share');
+const statsBox = $('stats'), mapCv = $('map'), summary = $('summary');
+const mctx = mapCv.getContext('2d');
+
+let W = 0, H = 0, dpr = 1;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  MOUSE.size = Math.max(22, Math.min(40, Math.min(W, H) * 0.04));
+  if (BOX.placed) clampBox();
+}
+
+const rnd = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const expo = mean => -mean * Math.log(1 - Math.random());
+const nowS = () => performance.now() / 1000;
+
+// ---------- sound: synthesised with the Web Audio API, no files ----------
+let audio = null, muted = false;
+function initAudio() {
+  if (audio) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  audio = new AC();
+  const len = Math.floor(audio.sampleRate * 0.3);
+  const buf = audio.createBuffer(1, len, audio.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  audio.noise = buf;
+}
+function ready() {
+  if (!audio || muted) return false;
+  if (audio.state === 'suspended') audio.resume();
+  return true;
+}
+function chirp(t0, f0, f1, f2, gain, dur) {
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(f0, t0);
+  o.frequency.exponentialRampToValueAtTime(f1, t0 + dur * 0.5);
+  o.frequency.exponentialRampToValueAtTime(f2, t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(audio.destination);
+  o.start(t0); o.stop(t0 + dur + 0.01);
+}
+function squeak() {                       // caught: two quick rising chirps
+  if (!ready()) return;
+  const t = audio.currentTime;
+  for (let i = 0; i < 2; i++) chirp(t + i * 0.13, 1900 + Math.random() * 400, 3200 + Math.random() * 500, 2200, 0.25, 0.12);
+}
+function startle() {                      // got away: one short, higher chirp
+  if (!ready()) return;
+  chirp(audio.currentTime, 2600 + Math.random() * 400, 4200, 3000, 0.2, 0.09);
+}
+function peep() {                         // from inside the box: one quiet chirp
+  if (!ready()) return;
+  chirp(audio.currentTime, 2200 + Math.random() * 300, 3000, 2400, 0.06, 0.08);
+}
+function noise(gain, freq, dur) {         // filtered-noise burst
+  if (!ready()) return;
+  const t = audio.currentTime;
+  const src = audio.createBufferSource(); src.buffer = audio.noise;
+  const f = audio.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = 0.8;
+  const g = audio.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f).connect(g).connect(audio.destination);
+  src.start(t); src.stop(t + dur + 0.02);
+}
+const rustle  = () => noise(0.07, 4000, 0.18);    // the mouse darts
+const scratch = () => noise(0.035, 2500, 0.25);   // scrabbling inside the box
+
+// ---------- state ----------
+const MOUSE = { x: 0, y: 0, heading: 0, speed: 0, size: 30, alive: false, entered: false,
+                mode: 'pause', modeLeft: 0, wiggle: 0, respawnAt: 0, spawnedAt: 0,
+                noHitUntil: 0, lastHideEnd: -1e9, peek: null, nextPeekAt: 0, nextNoiseAt: 0 };
+const BOX = { x: 0, y: 0, half: 0, placed: false };
+const MARGIN = 70;
+const rings = [];
+let escapes = 0;                          // escapes in a row since the last catch
+let played = 0, winding = false, finished = false;
+const stats = { spawns: 0, catches: 0, escapes: 0, flushes: 0, ttc: [], pounces: [] };
+const log = [];
+function note(e, extra) { log.push(Object.assign({ t: +played.toFixed(2), e }, extra)); }
+
+// ---------- the box ----------
+function placeBox() {
+  const half = BOX.half = MOUSE.size * 2.2, m = MARGIN + half;
+  BOX.placed = true;
+  for (let i = 0; i < 80; i++) {
+    const x = rnd(m, W - m), y = rnd(m, H - m);
+    const nearPauseCorner = x - half < 230 && y - half < 230;
+    const central = Math.hypot(x - W / 2, y - H / 2) < Math.min(W, H) * 0.28;
+    if (!nearPauseCorner && !central) { BOX.x = x; BOX.y = y; return; }
+  }
+  BOX.x = W - m; BOX.y = H - m;
+}
+function clampBox() {
+  const half = BOX.half = MOUSE.size * 2.2, m = MARGIN + half;
+  BOX.x = clamp(BOX.x, m, W - m); BOX.y = clamp(BOX.y, m, H - m);
+}
+function onBox(x, y) {
+  const r = BOX.half + MOUSE.size * 0.6;
+  return BOX.placed && Math.abs(x - BOX.x) <= r && Math.abs(y - BOX.y) <= r;
+}
+function restPose() {                     // fully covered: nose and tail both inside the box edge
+  const r = MOUSE.size * 0.45;
+  MOUSE.x = BOX.x + Math.cos(MOUSE.heading) * r;
+  MOUSE.y = BOX.y + Math.sin(MOUSE.heading) * r;
+}
+
+// ---------- the mouse ----------
+function spawnFromEdge() {
+  const s = MOUSE.size, side = Math.floor(Math.random() * 4);
+  if (side === 0)      { MOUSE.x = -2 * s;   MOUSE.y = rnd(MARGIN, H - MARGIN); MOUSE.heading = rnd(-0.6, 0.6); }
+  else if (side === 1) { MOUSE.x = W + 2 * s; MOUSE.y = rnd(MARGIN, H - MARGIN); MOUSE.heading = Math.PI + rnd(-0.6, 0.6); }
+  else if (side === 2) { MOUSE.y = -2 * s;   MOUSE.x = rnd(MARGIN, W - MARGIN); MOUSE.heading = Math.PI / 2 + rnd(-0.6, 0.6); }
+  else                 { MOUSE.y = H + 2 * s; MOUSE.x = rnd(MARGIN, W - MARGIN); MOUSE.heading = -Math.PI / 2 + rnd(-0.6, 0.6); }
+  MOUSE.alive = true; MOUSE.entered = false; MOUSE.peek = null;
+  MOUSE.spawnedAt = nowS(); stats.spawns++; note('spawn');
+  startRun(true);
+}
+function startRun(dart) {
+  MOUSE.mode = 'run';
+  MOUSE.speed = dart ? rnd(520, 720) : rnd(220, 480);
+  MOUSE.modeLeft = dart ? rnd(0.5, 0.9) : rnd(0.3, 1.1);
+  rustle();
+}
+function startPause() {                   // sniffing about
+  MOUSE.mode = 'pause'; MOUSE.speed = 0; MOUSE.modeLeft = rnd(0.2, 0.9);
+}
+function startFreeze() {                  // dead still, then a dart
+  MOUSE.mode = 'freeze'; MOUSE.speed = 0; MOUSE.modeLeft = rnd(0.8, 2.2);
+}
+function endRun() { if (Math.random() < T.freezeChance) startFreeze(); else startPause(); }
+function pickHeading() {
+  const nearEdge = MOUSE.x < MARGIN || MOUSE.x > W - MARGIN || MOUSE.y < MARGIN || MOUSE.y > H - MARGIN;
+  MOUSE.heading = nearEdge
+    ? Math.atan2(H / 2 - MOUSE.y, W / 2 - MOUSE.x) + rnd(-0.8, 0.8)   // head roughly back toward the middle
+    : MOUSE.heading + rnd(-1.4, 1.4);                                   // otherwise wander
+}
+function wantsHide() {
+  return BOX.placed && !winding && nowS() - MOUSE.lastHideEnd > T.hideCooldownS && Math.random() < T.hideChance;
+}
+function startToBox() { MOUSE.mode = 'toBox'; MOUSE.speed = rnd(260, 420); MOUSE.modeLeft = 1e9; rustle(); }
+function startHide(dir) {
+  const t = nowS();
+  MOUSE.mode = 'hide'; MOUSE.speed = 0; MOUSE.entered = true; MOUSE.heading = dir;
+  restPose();
+  MOUSE.modeLeft = clamp(1 + expo(2.5), 1, 8);
+  if (winding) MOUSE.modeLeft = 1;
+  MOUSE.peek = null; MOUSE.nextPeekAt = t + rnd(0.5, 1.2); MOUSE.nextNoiseAt = t + rnd(0.6, 1.5);
+  note('hide', { for: +MOUSE.modeLeft.toFixed(1) });
+}
+function exitBox() {                      // hide time is up: dart out, mostly toward the middle
+  MOUSE.lastHideEnd = nowS(); MOUSE.peek = null;
+  MOUSE.heading = Math.atan2(H / 2 - BOX.y, W / 2 - BOX.x) + rnd(-1.2, 1.2);
+  restPose(); note('leave');
+  startRun(true);
+}
+function fleeDir(fromX, fromY) {          // away from the paw, with some scatter
+  const dx = MOUSE.x - fromX, dy = MOUSE.y - fromY;
+  let dir = dx * dx + dy * dy < 1 ? rnd(-Math.PI, Math.PI) : Math.atan2(dy, dx);
+  dir += rnd(-0.5, 0.5);
+  if (!MOUSE.entered) dir = Math.atan2(H / 2 - MOUSE.y, W / 2 - MOUSE.x) + rnd(-0.8, 0.8);
+  return dir;
+}
+function bolt(dir) {
+  MOUSE.mode = 'flee'; MOUSE.heading = dir;
+  MOUSE.speed = rnd(800, 1000); MOUSE.modeLeft = rnd(0.3, 0.5);
+  MOUSE.noHitUntil = nowS() + 0.3;
+  startle();
+}
+function startFlee(x, y) {                // near miss
+  escapes++; stats.escapes++; note('escape', { x: Math.round(x), y: Math.round(y) });
+  bolt(fleeDir(x, y));
+}
+function flush(x, y) {                    // paw on the box: out the far side
+  stats.flushes++; note('flush', { x: Math.round(x), y: Math.round(y) });
+  MOUSE.lastHideEnd = nowS(); MOUSE.peek = null;
+  MOUSE.x = BOX.x; MOUSE.y = BOX.y;       // measure the escape direction from the box centre
+  const dir = fleeDir(x, y);
+  MOUSE.heading = dir; restPose();        // start covered, so it emerges from the edge
+  bolt(dir);
+}
+function catchMouse() {
+  MOUSE.alive = false; MOUSE.peek = null; escapes = 0;
+  stats.catches++; stats.ttc.push(nowS() - MOUSE.spawnedAt);
+  rings.push({ x: MOUSE.x, y: MOUSE.y, t0: nowS() });
+  squeak(); note('catch', { x: Math.round(MOUSE.x), y: Math.round(MOUSE.y) });
+  if (winding) { finished = true; note('done'); setTimeout(showDone, 700); }
+  else MOUSE.respawnAt = nowS() + rnd(0.6, 1.4);
+}
+
+function move(dt) {
+  MOUSE.x += Math.cos(MOUSE.heading) * MOUSE.speed * dt;
+  MOUSE.y += Math.sin(MOUSE.heading) * MOUSE.speed * dt;
+  const s = MOUSE.size;
+  const inside = MOUSE.x > s && MOUSE.x < W - s && MOUSE.y > s && MOUSE.y < H - s;
+  if (!MOUSE.entered) { if (inside) MOUSE.entered = true; }
+  else {                                                                 // bounce off the edges
+    if (MOUSE.x < s)     { MOUSE.x = s;     MOUSE.heading = Math.PI - MOUSE.heading; }
+    if (MOUSE.x > W - s) { MOUSE.x = W - s; MOUSE.heading = Math.PI - MOUSE.heading; }
+    if (MOUSE.y < s)     { MOUSE.y = s;     MOUSE.heading = -MOUSE.heading; }
+    if (MOUSE.y > H - s) { MOUSE.y = H - s; MOUSE.heading = -MOUSE.heading; }
+  }
+}
+function updatePeek(dt) {
+  const t = nowS(), s = MOUSE.size, half = BOX.half;
+  if (t >= MOUSE.nextNoiseAt) { (Math.random() < 0.5 ? peep : scratch)(); MOUSE.nextNoiseAt = t + rnd(0.8, 2); }
+  if (!MOUSE.peek) {
+    if (t >= MOUSE.nextPeekAt) {
+      MOUSE.peek = { dir: Math.floor(Math.random() * 4) * Math.PI / 2, tail: Math.random() < 0.3, t0: t, out: 0.25, hold: rnd(0.2, 0.5) };
+    }
+    return;
+  }
+  const p = MOUSE.peek, e = t - p.t0;
+  let k;
+  if (e < p.out) k = e / p.out;
+  else if (e < p.out + p.hold) k = 1;
+  else if (e < 2 * p.out + p.hold) k = 1 - (e - p.out - p.hold) / p.out;
+  else { MOUSE.peek = null; MOUSE.nextPeekAt = t + rnd(0.6, 1.5); restPose(); return; }
+  k = k * k * (3 - 2 * k);
+  let r;
+  if (p.tail) { MOUSE.heading = p.dir + Math.PI; r = half - 2.5 * s + k * 2.2 * s; MOUSE.wiggle += dt * 10; }  // tail and rump slide out, tail twitching
+  else        { MOUSE.heading = p.dir;           r = half - 1.4 * s + k * 1.6 * s; MOUSE.wiggle += dt * 4;  }  // nose first, head and most of the body
+  MOUSE.x = BOX.x + Math.cos(p.dir) * r;
+  MOUSE.y = BOX.y + Math.sin(p.dir) * r;
+}
+
+function update(dt) {
+  played += dt;
+  if (!winding && played >= T.sessionS) {
+    winding = true; note('winding');
+    if (MOUSE.mode === 'hide') MOUSE.modeLeft = Math.min(MOUSE.modeLeft, 1);
+  }
+  if (!MOUSE.alive) { if (!finished && nowS() >= MOUSE.respawnAt) spawnFromEdge(); return; }
+  MOUSE.modeLeft -= dt;
+  const m = MOUSE.mode;
+  if (m === 'run' || m === 'flee') {
+    move(dt); MOUSE.wiggle += dt * 18;
+    if (MOUSE.modeLeft <= 0) { if (m === 'flee' && Math.random() < 0.6) startFreeze(); else endRun(); }
+  } else if (m === 'toBox') {
+    MOUSE.heading = Math.atan2(BOX.y - MOUSE.y, BOX.x - MOUSE.x);
+    const d = Math.hypot(BOX.x - MOUSE.x, BOX.y - MOUSE.y);
+    if (d <= MOUSE.speed * dt + 1) startHide(MOUSE.heading);
+    else { move(dt); MOUSE.wiggle += dt * 18; }
+  } else if (m === 'hide') {
+    updatePeek(dt);
+    if (MOUSE.modeLeft <= 0) exitBox();
+  } else if (m === 'freeze') {
+    if (MOUSE.modeLeft <= 0) { pickHeading(); startRun(true); }
+  } else {                                                               // pause: slow sniffing wiggle
+    MOUSE.wiggle += dt * 4;
+    if (MOUSE.modeLeft <= 0) {
+      if (wantsHide()) startToBox();
+      else { pickHeading(); startRun(Math.random() < 0.2); }
+    }
+  }
+}
+
+// ---------- drawing ----------
+function dot(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
+function rrect(c, x, y, w, h, r) {
+  c.beginPath(); c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+
+function drawMouse() {
+  const m = MOUSE, s = m.size;
+  ctx.save();
+  ctx.translate(m.x, m.y);
+  ctx.rotate(m.heading);
+  // tail
+  const w = Math.sin(m.wiggle) * s * 0.5;
+  ctx.strokeStyle = C.mouse; ctx.lineWidth = s * 0.16; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.9, 0);
+  ctx.quadraticCurveTo(-s * 1.7, w, -s * 2.5, -w * 0.6);
+  ctx.stroke();
+  // body + head
+  ctx.fillStyle = C.mouse;
+  ctx.beginPath(); ctx.ellipse(0, 0, s, s * 0.62, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(s * 0.85, 0, s * 0.55, s * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+  // ears
+  dot(s * 0.6, -s * 0.5, s * 0.28); dot(s * 0.6, s * 0.5, s * 0.28);
+  ctx.fillStyle = C.earInner;
+  dot(s * 0.6, -s * 0.5, s * 0.15); dot(s * 0.6, s * 0.5, s * 0.15);
+  // eyes + nose
+  ctx.fillStyle = C.eye;
+  dot(s * 1.05, -s * 0.18, s * 0.07); dot(s * 1.05, s * 0.18, s * 0.07); dot(s * 1.4, 0, s * 0.08);
+  // whiskers
+  ctx.strokeStyle = C.whisker; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (const d of [-1, 1]) {
+    ctx.moveTo(s * 1.25, d * s * 0.05); ctx.lineTo(s * 1.75, d * s * 0.35);
+    ctx.moveTo(s * 1.25, d * s * 0.05); ctx.lineTo(s * 1.85, d * s * 0.1);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawBox() {                      // drawn after the mouse, so it covers whatever is under it
+  const h = BOX.half, r = MOUSE.size * 0.3;
+  ctx.fillStyle = C.box; rrect(ctx, BOX.x - h, BOX.y - h, 2 * h, 2 * h, r); ctx.fill();
+  ctx.strokeStyle = C.boxEdge; ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(BOX.x, BOX.y - h + r); ctx.lineTo(BOX.x, BOX.y + h - r); ctx.stroke();   // lid seam
+}
+
+function drawRings() {
+  const t = nowS();
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const k = (t - rings[i].t0) / 0.35;
+    if (k >= 1) { rings.splice(i, 1); continue; }
+    ctx.strokeStyle = C.ring; ctx.globalAlpha = 1 - k; ctx.lineWidth = 6 * (1 - k) + 1;
+    ctx.beginPath(); ctx.arc(rings[i].x, rings[i].y, MOUSE.size * (0.8 + k * 2.2), 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function draw() {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  drawRings();
+  if (MOUSE.alive) drawMouse();
+  if (BOX.placed) drawBox();
+}
+
+// ---------- input ----------
+let running = false, paused = false, holdTimer = null, lastTouchS = 0;
+const touches = new Map();                // every paw currently on the screen, by touch id
+
+function nearest(points) {
+  let best = null, bd = Infinity;
+  for (const p of points) { const d = Math.hypot(p.x - MOUSE.x, p.y - MOUSE.y); if (d < bd) { bd = d; best = p; } }
+  return { p: best, d: bd };
+}
+// pounce=true for touch events, false for the per-frame check of paws already resting on the screen
+function contact(points, pounce) {
+  if (!running || paused || finished || !MOUSE.alive || MOUSE.mode === 'hide' || nowS() < MOUSE.noHitUntil) return false;
+  const { p, d } = nearest(points);
+  if (!p) return false;
+  const s = MOUSE.size;
+  if (d <= T.innerR * s) { catchMouse(); return true; }                  // under the paw
+  if (d <= T.outerR * s) {                                               // near miss
+    if (escapes < T.maxEscapes && !winding) startFlee(p.x, p.y);
+    else if (pounce) { catchMouse(); return true; }                      // escapes used up: be generous
+  }
+  return false;
+}
+function pounce(pts) {
+  lastTouchS = nowS();
+  if (!running || paused || finished) return;
+  let hit = false;
+  if (MOUSE.alive && MOUSE.mode === 'hide') {
+    const p = pts.find(q => onBox(q.x, q.y));
+    if (p) flush(p.x, p.y);
+  } else hit = contact(pts, true);
+  for (const p of pts) stats.pounces.push({ x: Math.round(p.x), y: Math.round(p.y), hit });
+  note('paw', { n: pts.length, hit });
+}
+function cornerHoldStart(x, y) {          // hold the top-left corner for 2 s to pause
+  if (x < 130 && y < 130 && !holdTimer) holdTimer = setTimeout(() => showPause(), 2000);
+}
+function cornerHoldEnd() { clearTimeout(holdTimer); holdTimer = null; }
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const pts = [];
+  for (const t of e.changedTouches) {
+    touches.set(t.identifier, { x: t.clientX, y: t.clientY });
+    pts.push({ x: t.clientX, y: t.clientY });
+    cornerHoldStart(t.clientX, t.clientY);
+  }
+  pounce(pts);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const pts = [];
+  for (const t of e.changedTouches) {
+    touches.set(t.identifier, { x: t.clientX, y: t.clientY });
+    pts.push({ x: t.clientX, y: t.clientY });
+  }
+  lastTouchS = nowS();
+  contact(pts, true);
+}, { passive: false });
+function touchEnd(e) {
+  if (e.cancelable) e.preventDefault();
+  for (const t of e.changedTouches) touches.delete(t.identifier);
+  cornerHoldEnd();
+}
+canvas.addEventListener('touchend', touchEnd, { passive: false });
+canvas.addEventListener('touchcancel', touchEnd, { passive: false });
+// desktop testing: the mouse pointer is one paw
+canvas.addEventListener('mousedown', e => { touches.set('m', { x: e.clientX, y: e.clientY }); pounce([{ x: e.clientX, y: e.clientY }]); });
+canvas.addEventListener('mousemove', e => {
+  if (!touches.has('m')) return;
+  touches.set('m', { x: e.clientX, y: e.clientY }); lastTouchS = nowS();
+  contact([{ x: e.clientX, y: e.clientY }], true);
+});
+window.addEventListener('mouseup', () => touches.delete('m'));
+document.addEventListener('gesturestart', e => e.preventDefault());       // no pinch-zoom in Safari
+
+// ---------- start / pause / done ----------
+let wakeLock = null;
+async function keepAwake() {
+  try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (e) { /* unsupported: set Auto-Lock to Never */ }
+}
+async function letSleep() {
+  try { await wakeLock?.release(); } catch (e) {}
+  wakeLock = null;
+}
+function showOverlay(t, h) {
+  title.textContent = t; hint.textContent = h;
+  renderStats();
+  overlay.classList.remove('hidden');
+}
+function showPause(why) {
+  paused = true; holdTimer = null; touches.clear(); letSleep();
+  againBtn.classList.add('hidden');
+  showOverlay('Paused', why || 'Tap anywhere to resume.');
+}
+function showDone() {
+  paused = true; touches.clear(); letSleep();
+  againBtn.classList.remove('hidden');
+  showOverlay('Done for now', 'That was a full session. A real treat now ends it on a win.');
+}
+function startSession() {
+  played = 0; winding = false; finished = false; escapes = 0;
+  rings.length = 0; log.length = 0;
+  Object.assign(stats, { spawns: 0, catches: 0, escapes: 0, flushes: 0, ttc: [], pounces: [] });
+  MOUSE.alive = false; MOUSE.lastHideEnd = -1e9; MOUSE.peek = null;
+  placeBox();
+  spawnFromEdge();
+}
+function resume() {
+  paused = false; lastTouchS = nowS(); touches.clear();
+  overlay.classList.add('hidden');
+  keepAwake();
+  try { document.documentElement.requestFullscreen?.(); } catch (e) {}
+}
+overlay.addEventListener('click', () => {
+  if (finished) return;                   // the done screen needs the button, so a stray paw can't restart it
+  initAudio();
+  if (!running) { running = true; startSession(); }
+  resume();
+});
+againBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  initAudio(); startSession(); resume();
+});
+muteBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  muted = !muted;
+  muteBtn.textContent = muted ? 'Sound off' : 'Sound on';
+});
+shareBtn.addEventListener('click', async e => {
+  e.stopPropagation();
+  const text = JSON.stringify({
+    screen: [W, H], box: BOX.placed ? [Math.round(BOX.x), Math.round(BOX.y), Math.round(BOX.half)] : null,
+    played: +played.toFixed(1), catches: stats.catches, escapes: stats.escapes, flushes: stats.flushes,
+    timeToCatch: stats.ttc.map(v => +v.toFixed(2)), pounces: stats.pounces, log
+  });
+  try {
+    if (navigator.share) await navigator.share({ title: 'Mouse log', text });
+    else { await navigator.clipboard.writeText(text); shareBtn.textContent = 'Copied'; }
+  } catch (err) { /* share sheet dismissed */ }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && running && !paused) keepAwake();
+});
+
+// ---------- stats on the pause screen ----------
+function median(a) {
+  if (!a.length) return 0;
+  const b = [...a].sort((x, y) => x - y), h = b.length >> 1;
+  return b.length % 2 ? b[h] : (b[h - 1] + b[h]) / 2;
+}
+function rollingMedian(a, w) {
+  const h = w >> 1, out = [];
+  for (let i = 0; i < a.length; i++) out.push(median(a.slice(Math.max(0, i - h), Math.min(a.length, i + h + 1))));
+  return out;
+}
+function renderStats() {
+  const has = stats.spawns > 0;
+  statsBox.classList.toggle('on', has);
+  shareBtn.classList.toggle('hidden', !has);
+  if (!has) return;
+  const mm = Math.floor(played / 60), ss = String(Math.floor(played % 60)).padStart(2, '0');
+  const n = stats.ttc.length, med = median(stats.ttc);
+  summary.textContent = `${stats.catches} caught, ${stats.escapes} got away, ${stats.flushes} flushed out of the box in ${mm}:${ss}.`
+    + (med ? ` Seconds to each catch below, median ${med.toFixed(1)}, bars capped at 20`
+             + (n >= 9 ? ', the line a rolling median over nine catches.' : '.') : '');
+  // a thumbnail of the screen with every pounce (capped by width and by height), then time to catch per mouse
+  const k = Math.min(300 / W, (W - 48) / W, 0.38), mw = Math.round(W * k), mh = Math.round(H * k);
+  const bh = 40, gap = 10, top = mh + gap, dotR = clamp(mw / 80, 2, 3.5);
+  mapCv.width = mw * dpr; mapCv.height = (top + bh) * dpr;
+  mapCv.style.width = mw + 'px'; mapCv.style.height = (top + bh) + 'px';
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mctx.fillStyle = '#0B1640'; rrect(mctx, 0, 0, mw, mh, 6); mctx.fill();
+  if (BOX.placed) {
+    mctx.strokeStyle = C.boxEdge; mctx.lineWidth = 1.5;
+    mctx.strokeRect((BOX.x - BOX.half) * k, (BOX.y - BOX.half) * k, BOX.half * 2 * k, BOX.half * 2 * k);
+  }
+  for (const p of stats.pounces) {
+    mctx.fillStyle = p.hit ? C.mouse : C.ring; mctx.globalAlpha = p.hit ? 0.9 : 0.5;
+    mctx.beginPath(); mctx.arc(p.x * k, p.y * k, dotR, 0, Math.PI * 2); mctx.fill();
+  }
+  mctx.globalAlpha = 1;
+  const bw = mw / Math.max(n, 12), yOf = v => top + bh - Math.max(2, Math.min(v, 20) / 20 * bh);
+  mctx.fillStyle = C.ring;
+  for (let i = 0; i < n; i++) {
+    const x = i * bw + (bw > 3 ? 1 : 0), w = bw > 3 ? bw - 2 : Math.max(bw, 1), y = yOf(stats.ttc[i]);
+    mctx.fillRect(x, y, w, top + bh - y);
+  }
+  if (n >= 9) {
+    const rm = rollingMedian(stats.ttc, 9);
+    mctx.strokeStyle = C.mouse; mctx.lineWidth = 1.5; mctx.beginPath();
+    rm.forEach((v, i) => { const x = i * bw + bw / 2, y = yOf(v); if (i) mctx.lineTo(x, y); else mctx.moveTo(x, y); });
+    mctx.stroke();
+  }
+  mctx.fillStyle = 'rgba(233,238,255,.35)'; mctx.fillRect(0, top + bh, mw, 1);
+}
+
+// ---------- loop ----------
+window.addEventListener('resize', resize);
+resize();
+let last = performance.now();
+function frame(t) {
+  let dt = (t - last) / 1000; last = t;
+  if (dt > 0.05) dt = 0.05;                 // don't teleport after a tab switch
+  if (running && !paused) {
+    update(dt);
+    if (!finished && touches.size) contact([...touches.values()], false);   // paws resting on the screen
+    if (!finished && nowS() - lastTouchS > T.idleS) showPause('No paws for three minutes. Tap anywhere to carry on.');
+  }
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
