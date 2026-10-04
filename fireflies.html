@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fireflies">
+<meta name="theme-color" content="#050A24">
+<title>Fireflies</title>
+<style>
+  :root { --night: #0B1640; --night-edge: #050A24; --text: #E4EAFF; --glow: #E6F57E; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--night-edge);
+    touch-action: none; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  body { position: fixed; inset: 0; background: radial-gradient(120% 90% at 50% 45%, var(--night) 0%, var(--night-edge) 100%); }
+  #c { position: fixed; inset: 0; display: block; touch-action: none; }
+  #overlay {
+    position: fixed; inset: 0; z-index: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    padding: 24px; text-align: center; color: var(--text);
+    background: rgba(5, 10, 36, .6);
+    transition: opacity .45s ease;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  #title { margin: 0; font-family: ui-serif, "New York", Georgia, serif; font-weight: 400; font-size: clamp(32px, 6vmin, 54px); line-height: 1.1; }
+  #overlay p { margin: 0; font-size: 16px; line-height: 1.5; max-width: 36ch; opacity: .7; }
+  #overlay #summary { opacity: .9; }
+  .buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 10px; }
+  .btn {
+    padding: 11px 24px; border-radius: 999px;
+    border: 1.5px solid rgba(228, 234, 255, .45); background: none;
+    color: var(--text); font: inherit; font-size: 16px; transition: opacity .3s ease;
+  }
+  .btn.solid { background: var(--text); border-color: var(--text); color: var(--night-edge); }
+  .btn:disabled { opacity: .3; }
+  .btn:focus-visible { outline: 2px solid var(--glow); outline-offset: 3px; }
+  #overlay .hidden { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c" role="img" aria-label="A swarm of fireflies"></canvas>
+
+<div id="overlay">
+  <h1 id="title">Tap to start</h1>
+  <p id="hint">Lay the screen flat. To pause, hold the top‑left corner for two seconds.</p>
+  <p id="summary" class="hidden"></p>
+  <div class="buttons">
+    <button id="resume" class="btn solid hidden" type="button">Resume</button>
+    <button id="restart" class="btn hidden" type="button">New session</button>
+    <button id="again" class="btn solid hidden" type="button">Play again</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ---------- tuning ----------
+// Lengths are fractions of the screen's short side (U). Speeds are U per second.
+const T = {
+  sessionS: 270,       // play time before the wind-down starts
+  idleS: 120,          // this long with no paw on the screen also starts the wind-down
+  windS: 35,           // the swarm goes dark from full size down to lastFew over this long
+  lastFew: 5,          // fireflies left at the end; a direct paw hit catches them
+  lastS: 40,           // how long the last few wait to be caught before fading out
+
+  count: 140,          // swarm size on a tablet; scaled down to 60% on phone-sized screens
+  glowR: 0.05,         // glow radius
+  perceive: 0.12,      // neighbour radius for cohesion, alignment and blink coupling
+  separate: 0.055,     // personal space (each firefly gets 0.75–1.3× this)
+  cohesion: 0.6,       // 1/s², pull towards the neighbours' centre
+  align: 1.0,          // 1/s, pull towards the neighbours' mean velocity
+  separation: 2.2,     // U/s², push at zero distance
+  attract: 0.35,       // U/s², pull towards the slowly wandering attractor
+  attractDead: 0.22,   // no pull within this distance of the attractor
+  wander: 0.2,         // U/s², per-firefly random steering
+  wanderTurn: 2.2,     // rad/√s, how quickly the wander direction drifts
+  margin: 0.12,        // width of the edge zone
+  edge: 5,             // U/s², push at the very edge
+  cruise: 0.09,        // calm speed
+  vmaxCalm: 0.22,      // speed limit when calm
+  vmaxScared: 1.3,     // speed limit when fully scared
+  accel: 0.9,          // 1/s, return to cruise speed from below
+  drag: 2.4,           // 1/s, return to cruise speed from above
+
+  scatterR: 0.15,      // tap radius
+  scatterV: 0.75,      // kick at the tap point
+  scareTau: 2.8,       // s, scare decay time constant; larger = slower regroup
+  pawR: 0.13,          // a resting or dragged paw pushes fireflies within this radius
+  paw: 3,              // U/s², push under the paw
+  catchR: 0.08,        // catch radius during the wind-down
+
+  period: 2.2,         // s, flash period
+  periodSpread: 0.07,  // ± fraction of the period
+  syncK: 2.5,          // rad/s, blink coupling; 0 gives independent twinkling
+  phaseNoise: 0.9,     // rad/√s, blink jitter; keeps the unison ragged
+  floor: 0.34,         // brightness between flashes, as a fraction of the peak
+  flashSharp: 4,       // higher = shorter flash
+
+  maxPixels: 2.5e6,    // canvas backing-store cap
+  cornerPx: 130,       // pause corner size, CSS px
+  cornerHoldS: 2,      // hold time to pause
+  againDelayS: 3       // "Play again" stays disabled this long so a stray paw can't restart
+};
+
+const TAU = Math.PI * 2;
+const $ = id => document.getElementById(id);
+const canvas = $('c'), ctx = canvas.getContext('2d');
+const overlay = $('overlay'), titleEl = $('title'), hintEl = $('hint'), summaryEl = $('summary');
+const resumeBtn = $('resume'), restartBtn = $('restart'), againBtn = $('again');
+
+// ---------- state ----------
+let state = 'start';                  // start | play | wind | paused | done
+let resumeTo = 'play';
+let clock = 0;                        // animation time, s
+let playT = 0, windT = 0, windN0 = 0, quietT = 0, lastPawT = 0;
+const stats = { taps: 0, caught: 0 };
+let flies = [], pops = [], sparks = [], rings = [];
+const paws = new Map();               // pointerId -> { x, y } for every contact on the screen
+let hold = null;                      // { id, t } while a contact rests in the pause corner
+let lastTapClock = -1;
+
+// ---------- screen ----------
+let W = 0, H = 0, U = 1, dpr = 1;
+function resize() {
+  const oldW = W, oldH = H;
+  W = window.innerWidth; H = window.innerHeight; U = Math.min(W, H);
+  dpr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(T.maxPixels / (W * H))));
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  if (oldW && oldH) {
+    const sx = W / oldW, sy = H / oldH;
+    for (const list of [flies, pops, sparks, rings]) for (const o of list) { o.x *= sx; o.y *= sy; }
+  }
+  if (state === 'paused') draw();
+}
+
+// Glow sprite, drawn once. Yellow-green on navy: cats are blue/yellow dichromats.
+const sprite = (() => {
+  const s = 128, c = document.createElement('canvas');
+  c.width = c.height = s;
+  const g = c.getContext('2d'), h = s / 2, grd = g.createRadialGradient(h, h, 0, h, h, h);
+  grd.addColorStop(0.00, 'rgba(255,255,238,1)');
+  grd.addColorStop(0.06, 'rgba(252,255,204,1)');
+  grd.addColorStop(0.15, 'rgba(234,247,132,.7)');
+  grd.addColorStop(0.32, 'rgba(208,236,92,.2)');
+  grd.addColorStop(0.58, 'rgba(182,222,72,.05)');
+  grd.addColorStop(1.00, 'rgba(182,222,72,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, s, s);
+  return c;
+})();
+
+// ---------- swarm ----------
+const phase = Array.from({ length: 4 }, () => Math.random() * TAU);
+
+function makeFly(x, y) {
+  const a = Math.random() * TAU, v = T.cruise * U;
+  return {
+    x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+    wa: Math.random() * TAU,                     // wander heading
+    th: Math.random() * TAU - Math.PI,           // blink phase
+    w: TAU / (T.period * (1 + (2 * Math.random() - 1) * T.periodSpread)),
+    s: 0,                                        // scare, 0..1
+    rs: 0.75 + 0.55 * Math.random(),             // personal-space factor, breaks up the lattice
+    a: -Math.random(),                           // opacity; starts negative for a staggered fade-in
+    dying: false,
+    n: 0, cx: 0, cy: 0, avx: 0, avy: 0, sepx: 0, sepy: 0, ps: 0, pc: 0, sin: 0, cos: 1
+  };
+}
+
+function spawnSwarm() {
+  flies = []; pops = []; sparks = []; rings = [];
+  const cx = W * (0.35 + 0.3 * Math.random()), cy = H * (0.35 + 0.3 * Math.random());
+  const count = Math.round(T.count * Math.min(1, Math.max(0.6, U / 700)));
+  for (let i = 0; i < count; i++) {
+    const r = Math.sqrt(Math.random()) * 0.3 * U, a = Math.random() * TAU;
+    flies.push(makeFly(cx + Math.cos(a) * r, cy + Math.sin(a) * r));
+  }
+}
+
+// A slow Lissajous-like path the flock is loosely drawn to, so it drifts around the screen.
+// Its range leaves room for the flock's own radius, so the flock isn't flattened against an edge.
+function attractor() {
+  const ax = Math.max(0, 0.5 * W - 0.36 * U), ay = Math.max(0, 0.5 * H - 0.36 * U);
+  return {
+    x: 0.5 * W + ax * (0.8 * Math.sin(0.071 * clock + phase[0]) + 0.2 * Math.sin(0.19 * clock + phase[1])),
+    y: 0.5 * H + ay * (0.8 * Math.sin(0.053 * clock + phase[2]) + 0.2 * Math.sin(0.23 * clock + phase[3]))
+  };
+}
+
+function windLevel() {                // 0 during play, rising to 1 across the wind-down
+  const winding = state === 'wind' || state === 'done' || (state === 'paused' && resumeTo === 'wind');
+  return winding ? Math.min(1, windT / T.windS) : 0;
+}
+
+function step(dt) {
+  const n = flies.length, A = attractor(), wl = windLevel();
+  const rP2 = (T.perceive * U) ** 2, rS0 = T.separate * U;
+  const m = T.margin * U, edge = T.edge * U, pawR = T.pawR * U;
+  const speedScale = 1 - 0.35 * wl, decay = Math.exp(-dt / T.scareTau), sdt = Math.sqrt(dt);
+
+  for (let i = 0; i < n; i++) {
+    const f = flies[i];
+    f.n = f.cx = f.cy = f.avx = f.avy = f.sepx = f.sepy = f.ps = f.pc = 0;
+    f.sin = Math.sin(f.th); f.cos = Math.cos(f.th);
+  }
+  // All pairs: ~10k checks at n = 140, cheaper than maintaining a spatial grid at this size.
+  for (let i = 0; i < n; i++) {
+    const a = flies[i];
+    for (let j = i + 1; j < n; j++) {
+      const b = flies[j], dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+      if (d2 > rP2) continue;
+      a.n++; b.n++;
+      a.cx += b.x; a.cy += b.y; b.cx += a.x; b.cy += a.y;
+      a.avx += b.vx; a.avy += b.vy; b.avx += a.vx; b.avy += a.vy;
+      a.ps += b.sin; a.pc += b.cos; b.ps += a.sin; b.pc += a.cos;
+      const rS = rS0 * 0.5 * (a.rs + b.rs);
+      if (d2 < rS * rS) {
+        if (d2 < 1e-4) { a.sepx += Math.random() - 0.5; a.sepy += Math.random() - 0.5; continue; }
+        const d = Math.sqrt(d2), k = (1 - d / rS) / d;
+        a.sepx -= dx * k; a.sepy -= dy * k; b.sepx += dx * k; b.sepy += dy * k;
+      }
+    }
+  }
+
+  for (let i = 0; i < n; i++) {
+    const f = flies[i], calm = (1 - f.s) * (1 - f.s);
+    let ax = T.separation * U * f.sepx, ay = T.separation * U * f.sepy, dth = 0;
+    if (f.n) {
+      const inv = 1 / f.n;
+      ax += calm * (T.cohesion * (f.cx * inv - f.x) + T.align * (f.avx * inv - f.vx));
+      ay += calm * (T.cohesion * (f.cy * inv - f.y) + T.align * (f.avy * inv - f.vy));
+      // Kuramoto: mean sin(θj − θi) = cosθi·mean(sinθj) − sinθi·mean(cosθj)
+      dth = T.syncK * calm * inv * (f.cos * f.ps - f.sin * f.pc);
+    }
+
+    const adx = A.x - f.x, ady = A.y - f.y, ad = Math.hypot(adx, ady) + 1e-6;
+    const pull = Math.min(1, Math.max(0, (ad - T.attractDead * U) / (0.3 * U)));
+    ax += T.attract * U * calm * pull * adx / ad;
+    ay += T.attract * U * calm * pull * ady / ad;
+
+    f.wa += (Math.random() - 0.5) * 3.46 * T.wanderTurn * sdt;
+    ax += T.wander * U * Math.cos(f.wa);
+    ay += T.wander * U * Math.sin(f.wa);
+
+    if (f.x < m) ax += edge * ((m - f.x) / m) ** 2; else if (f.x > W - m) ax -= edge * ((f.x - W + m) / m) ** 2;
+    if (f.y < m) ay += edge * ((m - f.y) / m) ** 2; else if (f.y > H - m) ay -= edge * ((f.y - H + m) / m) ** 2;
+
+    for (const p of paws.values()) {
+      const dx = f.x - p.x, dy = f.y - p.y, d2 = dx * dx + dy * dy;
+      if (d2 >= pawR * pawR) continue;
+      const d = Math.sqrt(d2) + 1e-6, q = 1 - d / pawR;
+      ax += T.paw * U * q * dx / d; ay += T.paw * U * q * dy / d;
+      if (f.s < 0.5 * q) f.s = 0.5 * q;
+    }
+
+    const sp = Math.hypot(f.vx, f.vy), target = T.cruise * U * speedScale * (1 + 1.5 * f.s);
+    if (sp > 1e-6) { const k = (target - sp) * (sp > target ? T.drag : T.accel) / sp; ax += f.vx * k; ay += f.vy * k; }
+
+    f.vx += ax * dt; f.vy += ay * dt;
+    const vmax = U * speedScale * (T.vmaxCalm + (T.vmaxScared - T.vmaxCalm) * f.s), sp2 = Math.hypot(f.vx, f.vy);
+    if (sp2 > vmax) { f.vx *= vmax / sp2; f.vy *= vmax / sp2; }
+    f.x += f.vx * dt; f.y += f.vy * dt;
+    if (f.x < 0) { f.x = 0; f.vx = Math.abs(f.vx) * 0.3; } else if (f.x > W) { f.x = W; f.vx = -Math.abs(f.vx) * 0.3; }
+    if (f.y < 0) { f.y = 0; f.vy = Math.abs(f.vy) * 0.3; } else if (f.y > H) { f.y = H; f.vy = -Math.abs(f.vy) * 0.3; }
+
+    f.s *= decay;
+    f.th += (f.w + dth) * dt + T.phaseNoise * (Math.random() - 0.5) * 3.46 * sdt;
+    if (f.th > Math.PI) f.th -= TAU; else if (f.th < -Math.PI) f.th += TAU;
+    f.a = f.dying ? f.a - dt / 1.4 : Math.min(1, f.a + dt / 1.5);
+  }
+  if (flies.some(f => f.dying && f.a <= 0)) flies = flies.filter(f => !(f.dying && f.a <= 0));
+}
+
+function scatter(x, y, strength) {
+  const R = T.scatterR * U;
+  for (const f of flies) {
+    let dx = f.x - x, dy = f.y - y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > R * R) continue;
+    let d = Math.sqrt(d2);
+    if (d < 1) { const a = Math.random() * TAU; dx = Math.cos(a); dy = Math.sin(a); d = 1; }
+    const q = Math.pow(1 - d / R, 0.6);
+    const ang = Math.atan2(dy, dx) + (Math.random() - 0.5) * 1.0;
+    const v = T.scatterV * U * strength * q * (0.6 + 0.8 * Math.random());
+    f.vx = 0.3 * f.vx + Math.cos(ang) * v;
+    f.vy = 0.3 * f.vy + Math.sin(ang) * v;
+    f.s = Math.max(f.s, strength * (0.35 + 0.65 * q));
+    if (q > 0.25) f.th = -0.2 - 0.3 * Math.random();   // startled: flashes now, out of step with the flock
+  }
+}
+
+function tryCatch(x, y) {
+  const R = T.catchR * U;
+  let caught = 0;
+  for (const f of flies) {
+    if (f.dying || f.a < 0.5) continue;
+    const dx = f.x - x, dy = f.y - y;
+    if (dx * dx + dy * dy > R * R) continue;
+    f.dying = true; f.a = 0; caught++;
+    pops.push({ x: f.x, y: f.y, t: 0 });
+    for (let k = 0; k < 9; k++) {
+      const a = Math.random() * TAU, v = (0.25 + 0.35 * Math.random()) * U;
+      sparks.push({ x: f.x, y: f.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: 0.45 + 0.3 * Math.random() });
+    }
+  }
+  stats.caught += caught;
+  return caught;
+}
+
+// ---------- session ----------
+function startWind() {
+  state = 'wind'; windT = 0; quietT = 0;
+  windN0 = flies.reduce((k, f) => k + (f.dying ? 0 : 1), 0);
+}
+
+function updateWind(dt) {
+  windT += dt;
+  const living = flies.filter(f => !f.dying);
+  let target;
+  if (windT < T.windS) target = Math.max(T.lastFew, Math.ceil(windN0 * (1 - windT / T.windS) ** 2));
+  else if (windT < T.windS + T.lastS) target = T.lastFew;
+  else target = 0;
+  for (let excess = living.length - target; excess > 0; excess--) {   // put out random fireflies
+    const i = Math.floor(Math.random() * living.length);
+    living[i].dying = true; living.splice(i, 1);
+  }
+  if (!flies.length && !pops.length && !sparks.length && !rings.length) { if ((quietT += dt) > 1) finish(); }
+  else quietT = 0;
+}
+
+function startSession(fresh) {
+  if (fresh) spawnSwarm();
+  playT = windT = quietT = lastPawT = 0; lastTapClock = -1;
+  stats.taps = stats.caught = 0;
+  paws.clear(); hold = null;
+  state = 'play';
+  overlay.classList.add('hidden');
+  requestWake();
+}
+
+function pause() {
+  if (state !== 'play' && state !== 'wind') return;
+  resumeTo = state; state = 'paused';
+  paws.clear(); hold = null;
+  releaseWake();
+  draw();
+  showOverlay('paused');
+}
+
+function finish() {
+  state = 'done';
+  paws.clear(); hold = null;
+  releaseWake();
+  showOverlay('done');
+}
+
+// ---------- input ----------
+function pounce(x, y, id) {
+  if (state !== 'play' && state !== 'wind') return;
+  lastPawT = playT;
+  const newTap = clock - lastTapClock > 0.08;         // a paw lands as several contacts within a few ms
+  lastTapClock = clock;
+  if (newTap) stats.taps++;
+  if (state === 'wind') tryCatch(x, y);
+  const strength = state === 'wind' ? 0.55 : 1;
+  scatter(x, y, strength);
+  if (newTap) rings.push({ x, y, R: T.scatterR * U * strength, t: 0 });
+  if (x < T.cornerPx && y < T.cornerPx && !hold) hold = { id, t: 0 };
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  paws.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  pounce(e.clientX, e.clientY, e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  const p = paws.get(e.pointerId);
+  if (!p) return;
+  p.x = e.clientX; p.y = e.clientY;
+  if (hold && hold.id === e.pointerId && (p.x > T.cornerPx || p.y > T.cornerPx)) hold = null;
+});
+function lift(e) {
+  paws.delete(e.pointerId);
+  if (hold && hold.id === e.pointerId) hold = null;
+}
+canvas.addEventListener('pointerup', lift);
+canvas.addEventListener('pointercancel', lift);
+for (const type of ['gesturestart', 'gesturechange', 'dblclick', 'contextmenu']) {
+  document.addEventListener(type, e => e.preventDefault());
+}
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+// ---------- overlay ----------
+let againTimer = 0;
+function showOverlay(mode) {
+  titleEl.textContent = mode === 'start' ? 'Tap to start' : mode === 'paused' ? 'Paused' : 'Session over';
+  hintEl.classList.toggle('hidden', mode !== 'start');
+  summaryEl.classList.toggle('hidden', mode === 'start');
+  summaryEl.textContent = mode === 'start' ? '' : summaryText();
+  resumeBtn.classList.toggle('hidden', mode !== 'paused');
+  restartBtn.classList.toggle('hidden', mode !== 'paused');
+  againBtn.classList.toggle('hidden', mode !== 'done');
+  if (mode === 'done') {
+    againBtn.disabled = true;
+    clearTimeout(againTimer);
+    againTimer = setTimeout(() => { againBtn.disabled = false; }, T.againDelayS * 1000);
+  }
+  overlay.classList.remove('hidden');
+}
+
+function summaryText() {
+  const t = Math.floor(playT), mins = Math.floor(t / 60), secs = t % 60;
+  const time = mins ? `${mins} min ${secs} s` : `${secs} s`;
+  const taps = `${stats.taps} paw ${stats.taps === 1 ? 'tap' : 'taps'}`;
+  const caught = `${stats.caught} ${stats.caught === 1 ? 'firefly' : 'fireflies'} caught`;
+  return `${time} of play, ${taps}, ${caught}.`;
+}
+
+overlay.addEventListener('click', () => { if (state === 'start') startSession(false); });
+resumeBtn.addEventListener('click', () => {
+  if (state !== 'paused') return;
+  state = resumeTo;
+  overlay.classList.add('hidden');
+  requestWake();
+});
+restartBtn.addEventListener('click', () => { if (state === 'paused') startSession(true); });
+againBtn.addEventListener('click', () => { if (state === 'done' && !againBtn.disabled) startSession(true); });
+
+// ---------- wake lock ----------
+let wake = null, wakePending = false;
+async function requestWake() {
+  if (!('wakeLock' in navigator) || wake || wakePending) return;
+  wakePending = true;
+  try {
+    const w = await navigator.wakeLock.request('screen');
+    if (state === 'play' || state === 'wind') {
+      wake = w;
+      w.addEventListener('release', () => { if (wake === w) wake = null; });
+    } else {
+      w.release().catch(() => {});
+    }
+  } catch (_) {
+    // not supported here (e.g. an iframe without permission); Auto-Lock just stays in charge
+  }
+  wakePending = false;
+}
+function releaseWake() {
+  if (wake) { wake.release().catch(() => {}); wake = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && (state === 'play' || state === 'wind')) requestWake();
+});
+
+// ---------- drawing ----------
+function draw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.globalCompositeOperation = 'lighter';           // overlapping glows add up like light
+  const wl = windLevel(), r0 = T.glowR * U * (1 + 0.35 * wl), floor = T.floor + (0.62 - T.floor) * wl;
+
+  for (const f of flies) {
+    if (f.a <= 0) continue;
+    const fl = Math.pow(0.5 + 0.5 * Math.cos(f.th), T.flashSharp);
+    const r = r0 * (0.85 + 0.2 * fl);
+    const sp = Math.hypot(f.vx, f.vy);
+    const st = 1 + Math.min(1.2, Math.max(0, sp / U - 0.25) / 0.6);   // stretch along the path when fast
+    const c = sp > 1e-6 ? f.vx / sp : 1, s = sp > 1e-6 ? f.vy / sp : 0;
+    const sx = dpr * st, sy = dpr / Math.sqrt(st);
+    ctx.globalAlpha = 0.9 * (floor + (1 - floor) * fl) * f.a;
+    ctx.setTransform(c * sx, s * sx, -s * sy, c * sy, f.x * dpr, f.y * dpr);
+    ctx.drawImage(sprite, -r, -r, 2 * r, 2 * r);
+  }
+  for (const p of pops) {
+    const k = p.t / 0.45, r = r0 * (1.3 + 2.4 * k);
+    ctx.globalAlpha = (1 - k) * (1 - k);
+    ctx.setTransform(dpr, 0, 0, dpr, p.x * dpr, p.y * dpr);
+    ctx.drawImage(sprite, -r, -r, 2 * r, 2 * r);
+  }
+  for (const s of sparks) {
+    const r = r0 * 0.32;
+    ctx.globalAlpha = 1 - s.t / s.life;
+    ctx.setTransform(dpr, 0, 0, dpr, s.x * dpr, s.y * dpr);
+    ctx.drawImage(sprite, -r, -r, 2 * r, 2 * r);
+  }
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.strokeStyle = 'rgb(126,232,255)';
+  ctx.lineWidth = 2;
+  for (const g of rings) {
+    const k = g.t / 0.55;
+    ctx.globalAlpha = 0.35 * (1 - k) * (1 - k);
+    ctx.beginPath(); ctx.arc(g.x, g.y, g.R * (0.2 + 0.8 * Math.sqrt(k)), 0, TAU); ctx.stroke();
+  }
+  if (hold && hold.t > 0.25) {                        // pause progress, only once it's clearly a hold
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = 'rgb(228,234,255)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(48, 48, 22, -Math.PI / 2, -Math.PI / 2 + TAU * Math.min(1, hold.t / T.cornerHoldS));
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function updateEffects(dt) {
+  for (let i = rings.length - 1; i >= 0; i--) if ((rings[i].t += dt) >= 0.55) rings.splice(i, 1);
+  for (let i = pops.length - 1; i >= 0; i--) if ((pops[i].t += dt) >= 0.45) pops.splice(i, 1);
+  const k = Math.exp(-4 * dt);
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    if ((s.t += dt) >= s.life) { sparks.splice(i, 1); continue; }
+    s.vx *= k; s.vy *= k; s.x += s.vx * dt; s.y += s.vy * dt;
+  }
+}
+
+// ---------- loop ----------
+function tick(dt) {
+  if (state === 'paused' || state === 'done') return;   // the last frame stays on screen
+  clock += dt;
+  if (state === 'play' || state === 'wind') {
+    playT += dt;
+    if (paws.size) lastPawT = playT;
+    if (hold && (hold.t += dt) >= T.cornerHoldS) { pause(); return; }
+    if (state === 'play' && (playT >= T.sessionS || playT - lastPawT >= T.idleS)) startWind();
+    if (state === 'wind') { updateWind(dt); if (state === 'done') return; }
+  }
+  step(dt);
+  updateEffects(dt);
+  draw();
+}
+
+let last = 0, loopOn = true;
+function frame(ts) {
+  const dt = last ? Math.min(0.05, Math.max(0, (ts - last) / 1000)) : 1 / 60;
+  last = ts;
+  if (loopOn) tick(dt);
+  requestAnimationFrame(frame);
+}
+
+resize();
+spawnSwarm();
+showOverlay('start');
+window.addEventListener('resize', resize);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
