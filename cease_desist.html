@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notice to Cease and Desist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #2b1d0e;
+    --ink-faded: #5a4128;
+    --rubric: #8b1a1a;
+    --parchment: #f3e4c2;
+    --parchment-edge: #d9bf8a;
+    --backdrop: #3a2a1c;
+    --seal: #9e1b1b;
+    --seal-dark: #6b0f0f;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 48px 16px;
+    background: var(--backdrop);
+    background-image: radial-gradient(ellipse at center, #4a3624 0%, #2a1d12 100%);
+    min-height: 100vh;
+    font-family: "IM Fell English", Georgia, "Times New Roman", serif;
+    color: var(--ink);
+  }
+
+  .scroll {
+    position: relative;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 64px 64px 72px;
+    background-color: var(--parchment);
+    background-image:
+      radial-gradient(ellipse at 15% 10%, rgba(255,255,255,0.35) 0%, transparent 45%),
+      radial-gradient(ellipse at 85% 90%, rgba(120,80,30,0.18) 0%, transparent 50%),
+      radial-gradient(circle at 70% 25%, rgba(140,95,40,0.10) 0%, transparent 20%),
+      radial-gradient(circle at 25% 75%, rgba(140,95,40,0.08) 0%, transparent 18%);
+    box-shadow:
+      inset 0 0 60px rgba(120, 80, 30, 0.45),
+      inset 0 0 12px rgba(90, 55, 20, 0.35),
+      0 12px 40px rgba(0, 0, 0, 0.6);
+    border-radius: 3px;
+  }
+
+  /* scorch marks, given the subject matter */
+  .scroll::before,
+  .scroll::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+    border-radius: 50%;
+    filter: blur(6px);
+  }
+  .scroll::before {
+    top: -10px; right: -14px;
+    width: 120px; height: 90px;
+    background: radial-gradient(ellipse, rgba(40,20,5,0.55) 0%, rgba(90,50,15,0.25) 45%, transparent 70%);
+  }
+  .scroll::after {
+    bottom: 30px; left: -18px;
+    width: 80px; height: 110px;
+    background: radial-gradient(ellipse, rgba(40,20,5,0.4) 0%, rgba(90,50,15,0.18) 45%, transparent 70%);
+  }
+
+  h1 {
+    margin: 0 0 8px;
+    text-align: center;
+    font-family: "UnifrakturMaguntia", "IM Fell English", serif;
+    font-weight: 400;
+    font-size: clamp(2rem, 6vw, 3rem);
+    line-height: 1.1;
+    color: var(--rubric);
+    letter-spacing: 0.01em;
+  }
+
+  .rule {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 auto 36px;
+    max-width: 360px;
+    color: var(--ink-faded);
+  }
+  .rule::before,
+  .rule::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--ink-faded), transparent);
+  }
+
+  p {
+    margin: 0 0 1.1em;
+    font-size: 1.15rem;
+    line-height: 1.6;
+    text-align: justify;
+    hyphens: auto;
+  }
+
+  .address {
+    font-style: italic;
+  }
+
+  .lead {
+    font-family: "IM Fell English SC", "IM Fell English", serif;
+    color: var(--rubric);
+    letter-spacing: 0.04em;
+  }
+
+  .dropcap::first-letter {
+    float: left;
+    font-family: "UnifrakturMaguntia", serif;
+    font-size: 3.6em;
+    line-height: 0.8;
+    padding: 6px 8px 0 0;
+    color: var(--rubric);
+  }
+
+  .emphatic {
+    font-family: "IM Fell English SC", "IM Fell English", serif;
+    letter-spacing: 0.03em;
+  }
+
+  .goat {
+    text-align: center;
+    font-size: 1.25rem;
+    margin: 1.4em 0;
+  }
+
+  .govern {
+    text-align: center;
+    font-style: italic;
+    font-size: 1.25rem;
+    margin-top: 1.6em;
+  }
+
+  .signature-block {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 24px;
+    margin-top: 48px;
+  }
+
+  .signature {
+    flex: 1;
+    text-align: left;
+  }
+  .signature .by-order {
+    font-family: "IM Fell English SC", serif;
+    font-size: 1.2rem;
+    margin: 0 0 4px;
+    text-align: left;
+  }
+  .signature .office {
+    margin: 0 0 14px;
+    text-align: left;
+  }
+  .signature .secretary {
+    font-style: italic;
+    font-size: 0.98rem;
+    color: var(--ink-faded);
+    text-align: left;
+    margin: 0;
+  }
+
+  .seal {
+    flex: 0 0 auto;
+    width: 116px;
+    height: 116px;
+    transform: rotate(-12deg);
+    filter: drop-shadow(2px 4px 4px rgba(0,0,0,0.35));
+  }
+
+  @media (max-width: 600px) {
+    body { padding: 24px 16px; }
+    .scroll { padding: 40px 24px 48px; }
+    p { font-size: 1.05rem; text-align: left; }
+    .signature-block { flex-direction: column-reverse; align-items: center; }
+    .signature, .signature p { text-align: center !important; }
+  }
+
+  @media print {
+    body { background: none; padding: 0; }
+    .scroll { box-shadow: inset 0 0 60px rgba(120, 80, 30, 0.45); max-width: none; }
+    @page { margin: 12mm; }
+  }
+</style>
+</head>
+<body>
+  <main class="scroll">
+    <h1>Notice to Cease and Desist</h1>
+    <div class="rule">&#10087;</div>
+
+    <p class="address"><span class="lead">To the Dragon</span> presently in occupation, without lease, licence, or leave, of a cavern at the summit of the Mountain, hereinafter &ldquo;the Respondent&rdquo;:</p>
+
+    <p class="dropcap"><span class="emphatic">Take notice</span> that on a night now one week past, of which you will need no reminding, you did wilfully, wantonly, and with every appearance of enjoyment, set ablaze the greater part of the village of Dorfenburg, to wit: the dwellings, the Millhouse, the tanner&rsquo;s yard, the offices of the <em>Dorfenburg Crier</em>, and sundry outbuildings, fences, hayricks of this village, and one (1) much-lov&rsquo;d elderly goat, answering to Brunhilde. Such conduct constitutes arson, trespass, destruction of property, and manners of a kind this office had not thought possible in a creature of your evident age.</p>
+
+    <p>The Respondent is hereby directed to <span class="emphatic">immediately</span> cease all incineration, scorching, smouldering, and ominous circling of this village and its environs, and any other conduct of a like nature, whether presently contemplated or not.</p>
+
+    <p>Failure to comply will result in the full weight of Dorfenburg&rsquo;s remedies, including but not limited to military action, reports to the Crown, and other means mystical, magical, religious, and agricultural.</p>
+
+    <p class="goat">Restitution for the goat is non-negotiable.</p>
+
+    <p class="govern">Govern yourself accordingly.</p>
+
+    <div class="signature-block">
+      <div class="signature">
+        <p class="by-order">By Order of the Mayor</p>
+        <p class="office">Office of the Mayor, Dorfenburg</p>
+        <p class="secretary">(per the Mayor&rsquo;s secretary, who asks that this not be mention&rsquo;d to the brewer)</p>
+      </div>
+
+      <svg class="seal" viewBox="0 0 120 120" aria-label="Wax seal of the Office of the Mayor, Dorfenburg" role="img">
+        <defs>
+          <radialGradient id="wax" cx="40%" cy="35%" r="70%">
+            <stop offset="0%" stop-color="#c62a2a"/>
+            <stop offset="60%" stop-color="#9e1b1b"/>
+            <stop offset="100%" stop-color="#5e0c0c"/>
+          </radialGradient>
+          <path id="ring" d="M60,60 m-38,0 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"/>
+        </defs>
+        <path fill="url(#wax)" d="M60 4 C72 6 78 2 88 10 C98 16 106 18 110 30 C116 40 118 48 116 60 C118 72 114 80 108 90 C102 100 96 106 84 110 C74 116 66 114 56 116 C44 116 36 112 28 106 C18 100 12 94 8 82 C4 72 4 64 4 56 C4 44 8 36 16 26 C22 18 30 12 40 8 C46 6 52 4 60 4 Z"/>
+        <circle cx="60" cy="60" r="44" fill="none" stroke="#6b0f0f" stroke-width="2" opacity="0.7"/>
+        <circle cx="60" cy="60" r="30" fill="none" stroke="#6b0f0f" stroke-width="1.5" opacity="0.6"/>
+        <text font-family="IM Fell English SC, serif" font-size="9.5" fill="#5a0a0a" letter-spacing="1.5" opacity="0.85">
+          <textPath href="#ring" startOffset="2%">SIGILLUM · BURGI · DORFENBURG ·</textPath>
+        </text>
+        <text x="60" y="71" text-anchor="middle" font-family="UnifrakturMaguntia, serif" font-size="32" fill="#5a0a0a" opacity="0.85">D</text>
+      </svg>
+    </div>
+  </main>
+</body>
+</html>
