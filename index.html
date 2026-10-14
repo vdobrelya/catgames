@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>catgames</title>
+<style>
+  :root {
+    --bg: #0b1733;
+    --card: #132046;
+    --fg: #e8ecf4;
+    --muted: #8d97b0;
+    --accent: #f5d547;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 48px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 18px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { margin: 0; font-size: 2rem; }
+  .tagline { margin: 4px 0 32px; color: var(--muted); }
+  h2 {
+    margin: 32px 0 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li + li { margin-top: 8px; }
+  a.card {
+    display: block;
+    padding: 16px 20px;
+    background: var(--card);
+    border-radius: 10px;
+    color: inherit;
+    text-decoration: none;
+  }
+  a.card:hover, a.card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 0;
+  }
+  a.card strong { display: block; color: var(--accent); }
+  a.card span { color: var(--muted); font-size: 0.95rem; }
+  footer { margin-top: 48px; font-size: 0.85rem; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>catgames</h1>
+  <p class="tagline">games for me cat (2 of 4 are for the cat)</p>
+
+  <h2>For the cat</h2>
+  <ul>
+    <li>
+      <a class="card" href="mousegame.html">
+        <strong>Mouse game</strong>
+        <span>A yellow mouse on a dark blue screen. It runs, hides in a box, and sometimes gets away. Sessions wind down after five minutes.</span>
+      </a>
+    </li>
+    <li>
+      <a class="card" href="fireflies.html">
+        <strong>Fireflies</strong>
+        <span>A swarm of glowing dots drifting across a dark screen. Tap to scatter the nearby ones; they slowly regroup.</span>
+      </a>
+    </li>
+  </ul>
+
+  <h2>Not for the cat</h2>
+  <ul>
+    <li>
+      <a class="card" href="treebasic.html">
+        <strong>Growing tree</strong>
+        <span>A tree grows from nothing in timelapse. Restart to grow it again.</span>
+      </a>
+    </li>
+    <li>
+      <a class="card" href="cease_desist.html">
+        <strong>Notice to Cease and Desist</strong>
+        <span>From the Office of the Mayor of Dorfenburg to the dragon currently occupying the Mountain. Restitution for the goat is non-negotiable.</span>
+      </a>
+    </li>
+  </ul>
+
+  <footer><a href="https://github.com/vdobrelya/catgames">source</a></footer>
+</main>
+</body>
+</html>
