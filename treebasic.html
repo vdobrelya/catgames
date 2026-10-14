@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Growing tree</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #f4f1ea; overflow: hidden; }
+  canvas { display: block; }
+  button {
+    position: fixed; top: 16px; right: 16px;
+    padding: 8px 14px; font: 14px sans-serif;
+    border: 1px solid #333; background: #fff; color: #333;
+    border-radius: 6px; cursor: pointer;
+  }
+  button:hover { background: #333; color: #fff; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<button id="restart">Restart</button>
+<script>
+// ---- knobs ----
+const DURATION = 10000;   // ms to full size
+const DEPTH = 9;          // branch levels
+const COLOR = '#333';     // tree colour
+const OVERLAP = 0.7;      // child starts when parent is this fraction grown
+
+// each level's growth window, sized so the last level ends at t = 1
+const S = 1 / (DEPTH * OVERLAP + 1);
+
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let tree, start, W, H;
+
+// small seeded RNG so a given tree is reproducible
+function rng(seed) {
+  return () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+}
+
+function build(seed) {
+  const r = rng(seed);
+  function branch(depth, angle, len) {
+    const b = { depth, angle, len, kids: [] };
+    if (depth < DEPTH) {
+      const n = depth < 2 ? 2 : (r() < 0.3 ? 3 : 2);
+      for (let i = 0; i < n; i++) {
+        const spread = 0.35 + r() * 0.25;
+        const offset = n === 2 ? (i ? 1 : -1) * spread : (i - 1) * spread;
+        const a = angle + offset + (r() - 0.5) * 0.2;
+        b.kids.push(branch(depth + 1, a, len * (0.68 + r() * 0.12)));
+      }
+    }
+    return b;
+  }
+  return branch(0, 0, 1);
+}
+
+const clamp = v => Math.max(0, Math.min(1, v));
+
+function drawBranch(b, x, y, t, unit, w0) {
+  const p = clamp((t - b.depth * OVERLAP * S) / S); // local progress
+  if (p <= 0) return;
+  const e = 1 - (1 - p) * (1 - p);                   // ease-out
+  const L = b.len * unit * e;
+  const x2 = x + Math.sin(b.angle) * L;
+  const y2 = y - Math.cos(b.angle) * L;
+  ctx.lineWidth = Math.max(0.5, w0 * Math.pow(0.68, b.depth) * (0.25 + 0.75 * t));
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  for (const k of b.kids) drawBranch(k, x2, y2, t, unit, w0);
+}
+
+function render(t) {
+  ctx.clearRect(0, 0, W, H);
+  const unit = Math.min(H * 0.2, W * 0.16);
+  drawBranch(tree, W / 2, H * 0.95, t, unit, unit * 0.12);
+}
+
+function frame(now) {
+  const t = clamp((now - start) / DURATION);
+  render(t);
+  if (t < 1) requestAnimationFrame(frame);
+}
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.strokeStyle = COLOR;
+  ctx.lineCap = 'round';
+  if (tree) render(clamp((performance.now() - start) / DURATION));
+}
+
+function restart() {
+  tree = build(1 + Math.floor(Math.random() * 1e9));
+  start = performance.now();
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener('resize', resize);
+document.getElementById('restart').addEventListener('click', restart);
+resize();
+restart();
+</script>
+</body>
+</html>
