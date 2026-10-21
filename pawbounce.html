@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>PawBounce — Cat Box Ball Game</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      background-color: #140f0b;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    #gameCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      cursor: pointer;
+    }
+    .hud-pill {
+      background: rgba(24, 18, 13, 0.82);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 214, 10, 0.25);
+    }
+    .modal-backdrop {
+      background: rgba(12, 9, 6, 0.85);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+  </style>
+</head>
+<body class="relative w-full h-full flex flex-col justify-between select-none overflow-hidden">
+
+  <!-- Top HUD Bar (Compact for iPhone so the cat has maximum box area) -->
+  <header class="relative z-20 flex flex-wrap items-center justify-between gap-1.5 px-3 pt-2 pb-1.5 pointer-events-auto">
+    <!-- Score & Timer Status -->
+    <div class="hud-pill flex items-center gap-3 px-3 py-1.5 rounded-full text-amber-50 shadow-lg">
+      <div class="flex items-center gap-1.5" title="Paw Taps Score">
+        <span class="text-base leading-none">🐾</span>
+        <span class="text-xs uppercase tracking-wider text-amber-300/80 font-semibold">Score</span>
+        <span id="scoreDisplay" class="text-base font-extrabold text-yellow-300 tabular-nums">0</span>
+      </div>
+      <div class="h-3.5 w-px bg-amber-500/30"></div>
+      <div class="flex items-center gap-1.5" title="3-Minute Session Timer">
+        <span class="text-xs uppercase tracking-wider text-amber-300/80 font-semibold">Time</span>
+        <span id="timerDisplay" class="text-base font-extrabold text-sky-300 tabular-nums">03:00</span>
+      </div>
+    </div>
+
+    <!-- Human Controls -->
+    <div class="hud-pill flex items-center gap-1 px-2 py-1 rounded-full text-amber-50 shadow-lg">
+      <button id="styleBtn" type="button" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 active:scale-95 text-yellow-200 transition" title="Switch Ball Color (Cat Vision Optimized)">
+        🟡 Yellow Ball
+      </button>
+      <button id="speedBtn" type="button" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/20 hover:bg-sky-500/30 active:scale-95 text-sky-200 transition" title="Adjust Ball Speed">
+        ⚡ Normal
+      </button>
+      <button id="soundBtn" type="button" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 active:scale-95 text-emerald-200 transition" title="Toggle Squeak & Bell Sounds">
+        🔊 Sound
+      </button>
+      <button id="restartTopBtn" type="button" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/20 hover:bg-rose-500/30 active:scale-95 text-rose-200 transition" title="Restart 3-Min Game">
+        ↻ Reset
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Playable Box Arena -->
+  <main id="canvasContainer" class="relative flex-1 w-full h-full overflow-hidden">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Subtle floating hint that fades out after first tap -->
+    <div id="tapHint" class="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 z-10 px-3.5 py-1.5 rounded-full bg-black/55 border border-yellow-400/30 text-yellow-200/90 text-xs font-medium tracking-wide whitespace-nowrap transition-opacity duration-500">
+      Tap or swat the ball to bounce it in a new direction! (Spacebar also swats)
+    </div>
+  </main>
+
+  <!-- Game Over / 3-Minute Session Complete Modal -->
+  <div id="gameOverModal" class="modal-backdrop fixed inset-0 z-30 hidden items-center justify-center p-4">
+    <div class="w-full max-w-sm rounded-3xl bg-stone-900 border-2 border-yellow-400/50 p-6 text-center shadow-2xl text-amber-50">
+      <div class="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-yellow-400/20 border border-yellow-400/40 text-4xl">
+        🐱
+      </div>
+      <h2 class="text-2xl font-extrabold tracking-tight text-yellow-300">3 Minutes Complete!</h2>
+      <p id="ratingText" class="mt-1 text-sm text-amber-200/80 font-medium">Great hunting session, little tiger!</p>
+
+      <div class="mt-5 grid grid-cols-3 gap-2.5">
+        <div class="rounded-2xl bg-stone-800/90 border border-amber-500/20 p-3">
+          <div class="text-[11px] uppercase tracking-wider text-amber-300/70 font-semibold">Paw Hits</div>
+          <div id="finalScore" class="mt-1 text-2xl font-extrabold text-yellow-300 tabular-nums">0</div>
+        </div>
+        <div class="rounded-2xl bg-stone-800/90 border border-amber-500/20 p-3">
+          <div class="text-[11px] uppercase tracking-wider text-amber-300/70 font-semibold">Hits / Min</div>
+          <div id="finalRate" class="mt-1 text-2xl font-extrabold text-sky-300 tabular-nums">0.0</div>
+        </div>
+        <div class="rounded-2xl bg-stone-800/90 border border-amber-500/20 p-3">
+          <div class="text-[11px] uppercase tracking-wider text-amber-300/70 font-semibold">Best Score</div>
+          <div id="bestScore" class="mt-1 text-2xl font-extrabold text-emerald-300 tabular-nums">0</div>
+        </div>
+      </div>
+
+      <button id="playAgainBtn" type="button" class="mt-6 w-full rounded-2xl bg-yellow-400 hover:bg-yellow-300 active:scale-98 py-3.5 px-6 text-base font-extrabold text-stone-950 shadow-lg transition">
+        🐾 Play Again (3:00)
+      </button>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const SESSION_DURATION = 180; // 3 minutes in seconds
+
+      // DOM elements
+      const canvas = document.getElementById('gameCanvas');
+      const container = document.getElementById('canvasContainer');
+      const ctx = canvas.getContext('2d');
+      const scoreDisplay = document.getElementById('scoreDisplay');
+      const timerDisplay = document.getElementById('timerDisplay');
+      const styleBtn = document.getElementById('styleBtn');
+      const speedBtn = document.getElementById('speedBtn');
+      const soundBtn = document.getElementById('soundBtn');
+      const restartTopBtn = document.getElementById('restartTopBtn');
+      const tapHint = document.getElementById('tapHint');
+      const gameOverModal = document.getElementById('gameOverModal');
+      const finalScoreEl = document.getElementById('finalScore');
+      const finalRateEl = document.getElementById('finalRate');
+      const bestScoreEl = document.getElementById('bestScore');
+      const ratingTextEl = document.getElementById('ratingText');
+      const playAgainBtn = document.getElementById('playAgainBtn');
+
+      // Cat-vision friendly ball styles (Cats see yellows, blues, and high-contrast patterns best)
+      const BALL_STYLES = [
+        {
+          label: '🟡 Yellow Ball',
+          primary: '#FFF01F',
+          secondary: '#EAB308',
+          highlight: '#FFFFFF',
+          stripe: '#CA8A04',
+          glow: 'rgba(255, 240, 31, 0.45)'
+        },
+        {
+          label: '🔵 Sky Bell',
+          primary: '#38BDF8',
+          secondary: '#0284C7',
+          highlight: '#E0F2FE',
+          stripe: '#0369A1',
+          glow: 'rgba(56, 189, 248, 0.45)'
+        },
+        {
+          label: '🟢 Lime Bug',
+          primary: '#A3E635',
+          secondary: '#65A30D',
+          highlight: '#ECFCCB',
+          stripe: '#3F6212',
+          glow: 'rgba(163, 230, 53, 0.45)'
+        },
+        {
+          label: '🧶 Coral Yarn',
+          primary: '#FB7185',
+          secondary: '#E11D48',
+          highlight: '#FFE4E6',
+          stripe: '#9F1239',
+          glow: 'rgba(251, 113, 133, 0.45)'
+        }
+      ];
+
+      const SPEED_PRESETS = [
+        { label: '⚡ Normal', baseSpeed: 280, boostSpeed: 640 },
+        { label: '🚀 Fast', baseSpeed: 400, boostSpeed: 820 },
+        { label: '🐢 Gentle', baseSpeed: 190, boostSpeed: 460 }
+      ];
+
+      let styleIndex = 0;
+      let speedIndex = 0;
+      let soundEnabled = true;
+      let audioCtx = null;
+
+      // Game State
+      let score = 0;
+      let highScore = 0;
+      let timeRemaining = SESSION_DURATION;
+      let isGameOver = false;
+      let animFrameId = null;
+      let timerIntervalId = null;
+      let lastFrameTime = 0;
+      let untapIdleTimer = 0;
+
+      // Load high score safely
+      try {
+        const saved = localStorage.getItem('pawbounce_high_score');
+        if (saved !== null) {
+          highScore = parseInt(saved, 10) || 0;
+        }
+      } catch (e) {
+        highScore = 0;
+      }
+
+      // Box Geometry & Ball State
+      let box = { x: 18, y: 12, w: 300, h: 500, wallThickness: 16 };
+      let ball = {
+        x: 160,
+        y: 240,
+        vx: 240,
+        vy: 190,
+        radius: 34,
+        rotation: 0,
+        spinSpeed: 2.5,
+        squashX: 1,
+        squashY: 1,
+        squashAngle: 0,
+        flashTimer: 0
+      };
+
+      // Visual feedback arrays
+      let trail = [];
+      let ripples = [];
+      let particles = [];
+      let floatingTexts = [];
+
+      // Synthesized Web Audio API sounds for cats (squeaks, chirps, soft wall thuds)
+      function ensureAudio() {
+        if (!soundEnabled) return null;
+        try {
+          if (!audioCtx) {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioContextClass) {
+              audioCtx = new AudioContextClass();
+            }
+          }
+          if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+          }
+        } catch (e) {
+          return null;
+        }
+        return audioCtx;
+      }
+
+      function playPawSqueak() {
+        const ctxAudio = ensureAudio();
+        if (!ctxAudio) return;
+        try {
+          const now = ctxAudio.currentTime;
+          // Playful dual-tone mouse squeak / bell chirp
+          const osc = ctxAudio.createOscillator();
+          const gain = ctxAudio.createGain();
+          osc.type = 'sine';
+          const baseFreq = 950 + Math.random() * 450;
+          osc.frequency.setValueAtTime(baseFreq, now);
+          osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.65, now + 0.06);
+          osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.85, now + 0.14);
+
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.exponentialRampToValueAtTime(0.22, now + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+          osc.connect(gain);
+          gain.connect(ctxAudio.destination);
+          osc.start(now);
+          osc.stop(now + 0.16);
+        } catch (e) {}
+      }
+
+      function playWallBounceSound(intensity) {
+        const ctxAudio = ensureAudio();
+        if (!ctxAudio) return;
+        try {
+          const now = ctxAudio.currentTime;
+          const osc = ctxAudio.createOscillator();
+          const gain = ctxAudio.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(220 + Math.min(intensity * 0.2, 160), now);
+          osc.frequency.exponentialRampToValueAtTime(95, now + 0.065);
+
+          const vol = Math.min(0.12, Math.max(0.03, intensity / 6000));
+          gain.gain.setValueAtTime(vol, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+          osc.connect(gain);
+          gain.connect(ctxAudio.destination);
+          osc.start(now);
+          osc.stop(now + 0.075);
+        } catch (e) {}
+      }
+
+      function playSessionEndChime() {
+        const ctxAudio = ensureAudio();
+        if (!ctxAudio) return;
+        try {
+          const notes = [523.25, 659.25, 783.99, 1046.5];
+          notes.forEach((freq, idx) => {
+            const now = ctxAudio.currentTime + idx * 0.1;
+            const osc = ctxAudio.createOscillator();
+            const gain = ctxAudio.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+            osc.connect(gain);
+            gain.connect(ctxAudio.destination);
+            osc.start(now);
+            osc.stop(now + 0.3);
+          });
+        } catch (e) {}
+      }
+
+      function resizeCanvas() {
+        const rect = container.getBoundingClientRect();
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+        canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const pad = Math.max(12, Math.min(24, Math.min(rect.width, rect.height) * 0.04));
+        box.wallThickness = pad;
+        box.x = pad;
+        box.y = pad * 0.7;
+        box.w = Math.max(120, rect.width - pad * 2);
+        box.h = Math.max(120, rect.height - pad * 1.7);
+
+        // Adapt ball size comfortably for iPhone / tablet screens
+        const minDim = Math.min(box.w, box.h);
+        ball.radius = Math.max(28, Math.min(44, Math.round(minDim * 0.095)));
+
+        // Keep ball inside box after resize
+        ball.x = Math.max(box.x + ball.radius, Math.min(box.x + box.w - ball.radius, ball.x));
+        ball.y = Math.max(box.y + ball.radius, Math.min(box.y + box.h - ball.radius, ball.y));
+
+        drawScene();
+      }
+
+      function formatTime(seconds) {
+        const s = Math.max(0, Math.ceil(seconds));
+        const mins = Math.floor(s / 60);
+        const secs = s % 60;
+        return String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+      }
+
+      function updateHUD() {
+        scoreDisplay.textContent = String(score);
+        timerDisplay.textContent = formatTime(timeRemaining);
+        if (timeRemaining <= 15) {
+          timerDisplay.className = 'text-base font-extrabold text-rose-400 tabular-nums animate-pulse';
+        } else {
+          timerDisplay.className = 'text-base font-extrabold text-sky-300 tabular-nums';
+        }
+      }
+
+      function spawnHitParticles(x, y, color) {
+        for (let i = 0; i < 16; i++) {
+          const angle = (Math.PI * 2 * i) / 16 + (Math.random() - 0.5) * 0.35;
+          const speed = 90 + Math.random() * 240;
+          particles.push({
+            x,
+            y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            radius: 3 + Math.random() * 4.5,
+            life: 1,
+            decay: 1.8 + Math.random() * 1.2,
+            color: i % 2 === 0 ? color : '#FFFFFF'
+          });
+        }
+      }
+
+      function triggerBallBounce(tapX, tapY, isDirectHit) {
+        const preset = SPEED_PRESETS[speedIndex];
+        const dx = ball.x - tapX;
+        const dy = ball.y - tapY;
+        const dist = Math.hypot(dx, dy);
+
+        // Compute new bounce direction
+        let newAngle;
+        if (dist > 6 && isDirectHit) {
+          // If tapped slightly off-center, launch away from the paw with a playful random twist
+          newAngle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.9;
+        } else {
+          // If tapped dead-center, pick a sharp new direction different from current heading
+          const currentAngle = Math.atan2(ball.vy, ball.vx);
+          newAngle = currentAngle + Math.PI * (0.55 + Math.random() * 0.9);
+        }
+
+        const launchSpeed = preset.boostSpeed * (0.9 + Math.random() * 0.25);
+        ball.vx = Math.cos(newAngle) * launchSpeed;
+        ball.vy = Math.sin(newAngle) * launchSpeed;
+        ball.spinSpeed = (Math.random() > 0.5 ? 1 : -1) * (6 + Math.random() * 6);
+        ball.squashX = 1.36;
+        ball.squashY = 0.68;
+        ball.squashAngle = newAngle;
+        ball.flashTimer = 0.18;
+        untapIdleTimer = 0;
+
+        // Score & effects
+        score += 1;
+        updateHUD();
+        playPawSqueak();
+
+        const currentStyle = BALL_STYLES[styleIndex];
+        ripples.push({
+          x: ball.x,
+          y: ball.y,
+          radius: ball.radius * 0.6,
+          maxRadius: ball.radius * 2.8,
+          alpha: 0.9,
+          color: currentStyle.primary
+        });
+        spawnHitParticles(ball.x, ball.y, currentStyle.primary);
+        floatingTexts.push({
+          x: ball.x,
+          y: ball.y - ball.radius * 0.8,
+          text: '🐾 +1',
+          alpha: 1,
+          vy: -70
+        });
+
+        if (tapHint) {
+          tapHint.style.opacity = '0';
+        }
+      }
+
+      function handlePointerDown(clientX, clientY) {
+        if (isGameOver) return;
+        ensureAudio();
+
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        // Generous feline paw hitbox (ball radius + 38px paw tolerance)
+        const dist = Math.hypot(ball.x - x, ball.y - y);
+        const pawHitRadius = ball.radius + 38;
+
+        if (dist <= pawHitRadius) {
+          triggerBallBounce(x, y, true);
+        } else {
+          // Floor tap inside box: show subtle paw ripple and slightly curious nudge toward or away
+          ripples.push({
+            x,
+            y,
+            radius: 6,
+            maxRadius: 38,
+            alpha: 0.45,
+            color: '#FDE68A'
+          });
+          // Slight acoustic floor tap
+          playWallBounceSound(180);
+        }
+      }
+
+      // Pointer & Multi-Touch Listeners for Cat Paws
+      canvas.addEventListener('touchstart', function (e) {
+        e.preventDefault();
+        if (isGameOver) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          handlePointerDown(t.clientX, t.clientY);
+        }
+      }, { passive: false });
+
+      canvas.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        handlePointerDown(e.clientX, e.clientY);
+      });
+
+      // Keyboard accessibility / desktop testing
+      window.addEventListener('keydown', function (e) {
+        if (e.code === 'Space' && !isGameOver) {
+          e.preventDefault();
+          triggerBallBounce(ball.x, ball.y, false);
+        }
+      });
+
+      function updatePhysics(dt) {
+        const preset = SPEED_PRESETS[speedIndex];
+        untapIdleTimer += dt;
+
+        // Prey-like twitch: if the cat watches without tapping for 3.5 seconds, do an enticing wiggle/dart
+        if (untapIdleTimer > 3.5) {
+          untapIdleTimer = 0;
+          const dartAngle = Math.atan2(ball.vy, ball.vx) + (Math.random() - 0.5) * 1.8;
+          const dartSpeed = preset.baseSpeed * 1.45;
+          ball.vx = Math.cos(dartAngle) * dartSpeed;
+          ball.vy = Math.sin(dartAngle) * dartSpeed;
+          ball.squashX = 1.22;
+          ball.squashY = 0.82;
+          ball.squashAngle = dartAngle;
+        }
+
+        // Smoothly decay boost speed back toward base rolling speed
+        const speed = Math.hypot(ball.vx, ball.vy);
+        if (speed > preset.baseSpeed) {
+          const damped = Math.max(preset.baseSpeed, speed - (speed - preset.baseSpeed) * 1.9 * dt);
+          const scale = damped / (speed || 1);
+          ball.vx *= scale;
+          ball.vy *= scale;
+        } else if (speed < preset.baseSpeed * 0.85) {
+          const angle = speed > 1 ? Math.atan2(ball.vy, ball.vx) : Math.random() * Math.PI * 2;
+          ball.vx = Math.cos(angle) * preset.baseSpeed;
+          ball.vy = Math.sin(angle) * preset.baseSpeed;
+        }
+
+        // Move ball
+        ball.x += ball.vx * dt;
+        ball.y += ball.vy * dt;
+        ball.rotation += ball.spinSpeed * dt;
+
+        // Recover squash & stretch
+        ball.squashX += (1 - ball.squashX) * Math.min(1, dt * 12);
+        ball.squashY += (1 - ball.squashY) * Math.min(1, dt * 12);
+        if (ball.flashTimer > 0) {
+          ball.flashTimer = Math.max(0, ball.flashTimer - dt);
+        }
+
+        // Box Wall Collisions
+        const minX = box.x + ball.radius;
+        const maxX = box.x + box.w - ball.radius;
+        const minY = box.y + ball.radius;
+        const maxY = box.y + box.h - ball.radius;
+
+        let hitWall = false;
+        if (ball.x < minX) {
+          ball.x = minX;
+          ball.vx = Math.abs(ball.vx);
+          ball.squashX = 0.78;
+          ball.squashY = 1.22;
+          ball.squashAngle = 0;
+          hitWall = true;
+        } else if (ball.x > maxX) {
+          ball.x = maxX;
+          ball.vx = -Math.abs(ball.vx);
+          ball.squashX = 0.78;
+          ball.squashY = 1.22;
+          ball.squashAngle = 0;
+          hitWall = true;
+        }
+
+        if (ball.y < minY) {
+          ball.y = minY;
+          ball.vy = Math.abs(ball.vy);
+          ball.squashX = 1.22;
+          ball.squashY = 0.78;
+          ball.squashAngle = 0;
+          hitWall = true;
+        } else if (ball.y > maxY) {
+          ball.y = maxY;
+          ball.vy = -Math.abs(ball.vy);
+          ball.squashX = 1.22;
+          ball.squashY = 0.78;
+          ball.squashAngle = 0;
+          hitWall = true;
+        }
+
+        if (hitWall) {
+          // Slight angle perturbation so the ball never gets stuck in a repetitive loop
+          const angle = Math.atan2(ball.vy, ball.vx) + (Math.random() - 0.5) * 0.16;
+          const curSpeed = Math.hypot(ball.vx, ball.vy);
+          ball.vx = Math.cos(angle) * curSpeed;
+          ball.vy = Math.sin(angle) * curSpeed;
+          ball.spinSpeed = -ball.spinSpeed * 0.9 + (Math.random() - 0.5) * 3;
+          playWallBounceSound(curSpeed);
+        }
+
+        // Record motion trail
+        trail.push({ x: ball.x, y: ball.y, r: ball.radius * 0.75, alpha: 0.42 });
+        if (trail.length > 14) {
+          trail.shift();
+        }
+        for (let i = 0; i < trail.length; i++) {
+          trail[i].alpha *= 0.88;
+          trail[i].r *= 0.95;
+        }
+
+        // Update ripples
+        for (let i = ripples.length - 1; i >= 0; i--) {
+          const rp = ripples[i];
+          rp.radius += (rp.maxRadius - rp.radius) * Math.min(1, dt * 10);
+          rp.alpha -= dt * 2.1;
+          if (rp.alpha <= 0.02) ripples.splice(i, 1);
+        }
+
+        // Update particles
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vx *= 0.94;
+          p.vy *= 0.94;
+          p.life -= p.decay * dt;
+          if (p.life <= 0) particles.splice(i, 1);
+        }
+
+        // Update floating score popups
+        for (let i = floatingTexts.length - 1; i >= 0; i--) {
+          const ft = floatingTexts[i];
+          ft.y += ft.vy * dt;
+          ft.alpha -= dt * 1.45;
+          if (ft.alpha <= 0) floatingTexts.splice(i, 1);
+        }
+      }
+
+      function drawBoxArena() {
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        // Outer cardboard/wood frame background
+        ctx.fillStyle = '#291d14';
+        ctx.fillRect(0, 0, w, h);
+
+        // Recessed box interior shadow & warm dark felt floor for maximum contrast
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(box.x, box.y, box.w, box.h, 22);
+        ctx.fillStyle = '#181411';
+        ctx.fill();
+        ctx.clip();
+
+        // Subtle inner box depth bevel (3D cardboard walls effect)
+        const bevel = 14;
+        ctx.fillStyle = '#231c16';
+        ctx.fillRect(box.x, box.y, box.w, bevel);
+        ctx.fillStyle = '#1f1813';
+        ctx.fillRect(box.x, box.y, bevel, box.h);
+
+        // Subtle stitched felt grid texture inside box
+        ctx.strokeStyle = 'rgba(255, 235, 180, 0.035)';
+        ctx.lineWidth = 1;
+        const step = 48;
+        for (let gx = box.x + step; gx < box.x + box.w; gx += step) {
+          ctx.beginPath();
+          ctx.moveTo(gx, box.y);
+          ctx.lineTo(gx, box.y + box.h);
+          ctx.stroke();
+        }
+        for (let gy = box.y + step; gy < box.y + box.h; gy += step) {
+          ctx.beginPath();
+          ctx.moveTo(box.x, gy);
+          ctx.lineTo(box.x + box.w, gy);
+          ctx.stroke();
+        }
+
+        // Corner cardboard crease accents
+        ctx.strokeStyle = 'rgba(217, 160, 102, 0.18)';
+        ctx.lineWidth = 2;
+        const corners = [
+          [box.x, box.y, box.x + bevel, box.y + bevel],
+          [box.x + box.w, box.y, box.x + box.w - bevel, box.y + bevel],
+          [box.x, box.y + box.h, box.x + bevel, box.y + box.h - bevel],
+          [box.x + box.w, box.y + box.h, box.x + box.w - bevel, box.y + box.h - bevel]
+        ];
+        corners.forEach(c => {
+          ctx.beginPath();
+          ctx.moveTo(c[0], c[1]);
+          ctx.lineTo(c[2], c[3]);
+          ctx.stroke();
+        });
+
+        ctx.restore();
+
+        // Crisp wooden/cardboard rim border around the box
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(box.x, box.y, box.w, box.h, 22);
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = '#855834';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.roundRect(box.x - 2, box.y - 2, box.w + 4, box.h + 4, 24);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#b07d4f';
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawBallAndEffects() {
+        const style = BALL_STYLES[styleIndex];
+
+        // Draw trail
+        for (let i = 0; i < trail.length; i++) {
+          const t = trail[i];
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, Math.max(2, t.r * (i / trail.length)), 0, Math.PI * 2);
+          ctx.fillStyle = style.glow;
+          ctx.globalAlpha = t.alpha * (i / trail.length) * 0.55;
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Draw ripples
+        for (let i = 0; i < ripples.length; i++) {
+          const rp = ripples[i];
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(rp.x, rp.y, rp.radius, 0, Math.PI * 2);
+          ctx.strokeStyle = rp.color;
+          ctx.lineWidth = 3.5;
+          ctx.globalAlpha = Math.max(0, rp.alpha);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Draw particles
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = Math.max(0, p.life);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Draw Ball Shadow
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(ball.x + 5, ball.y + 8, ball.radius * 0.95, ball.radius * 0.85, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+        ctx.fill();
+        ctx.restore();
+
+        // Draw Rolling Ball
+        ctx.save();
+        ctx.translate(ball.x, ball.y);
+        ctx.rotate(ball.squashAngle);
+        ctx.scale(ball.squashX, ball.squashY);
+        ctx.rotate(-ball.squashAngle);
+
+        // Outer vibrant glow for cat eyes
+        ctx.shadowColor = style.primary;
+        ctx.shadowBlur = ball.flashTimer > 0 ? 28 : 16;
+
+        // Base sphere gradient
+        const grad = ctx.createRadialGradient(
+          -ball.radius * 0.3,
+          -ball.radius * 0.3,
+          ball.radius * 0.12,
+          0,
+          0,
+          ball.radius
+        );
+        grad.addColorStop(0, style.highlight);
+        grad.addColorStop(0.35, style.primary);
+        grad.addColorStop(1, style.secondary);
+
+        ctx.beginPath();
+        ctx.arc(0, 0, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // Clip inside ball for rolling seam/stripes so cat sees rotational motion
+        ctx.clip();
+        ctx.rotate(ball.rotation);
+
+        ctx.strokeStyle = style.stripe;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(-ball.radius * 0.55, 0, ball.radius * 0.78, -Math.PI * 0.45, Math.PI * 0.45);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(ball.radius * 0.55, 0, ball.radius * 0.78, Math.PI * 0.55, Math.PI * 1.45);
+        ctx.stroke();
+
+        // Center bell/target dot
+        ctx.fillStyle = style.highlight;
+        ctx.beginPath();
+        ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Flash overlay when hit
+        if (ball.flashTimer > 0) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+          ctx.beginPath();
+          ctx.arc(0, 0, ball.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.restore();
+
+        // Floating "+1" paw hit popups
+        for (let i = 0; i < floatingTexts.length; i++) {
+          const ft = floatingTexts[i];
+          ctx.save();
+          ctx.font = '800 18px Inter, sans-serif';
+          ctx.fillStyle = '#FEF08A';
+          ctx.globalAlpha = Math.max(0, ft.alpha);
+          ctx.textAlign = 'center';
+          ctx.fillText(ft.text, ft.x, ft.y);
+          ctx.restore();
+        }
+      }
+
+      function drawScene() {
+        drawBoxArena();
+        drawBallAndEffects();
+      }
+
+      function endSession() {
+        isGameOver = true;
+        if (timerIntervalId) {
+          clearInterval(timerIntervalId);
+          timerIntervalId = null;
+        }
+        if (animFrameId) {
+          cancelAnimationFrame(animFrameId);
+          animFrameId = null;
+        }
+
+        if (score > highScore) {
+          highScore = score;
+          try {
+            localStorage.setItem('pawbounce_high_score', String(highScore));
+          } catch (e) {}
+        }
+
+        const rate = (score / 3).toFixed(1);
+        finalScoreEl.textContent = String(score);
+        finalRateEl.textContent = rate;
+        bestScoreEl.textContent = String(highScore);
+
+        if (score >= 45) {
+          ratingTextEl.textContent = 'Apex Predator! Lightning-fast paws!';
+        } else if (score >= 20) {
+          ratingTextEl.textContent = 'Sharp Hunter! Those paws never miss!';
+        } else if (score >= 5) {
+          ratingTextEl.textContent = 'Curious Kitty! Nice playful swats!';
+        } else {
+          ratingTextEl.textContent = 'Observant Supervisor! Watching the ball closely!';
+        }
+
+        gameOverModal.classList.remove('hidden');
+        gameOverModal.classList.add('flex');
+        playSessionEndChime();
+      }
+
+      function gameLoop(timestamp) {
+        if (isGameOver) return;
+        if (!lastFrameTime) lastFrameTime = timestamp;
+        const dt = Math.min(0.05, (timestamp - lastFrameTime) / 1000);
+        lastFrameTime = timestamp;
+
+        updatePhysics(dt);
+        drawScene();
+
+        animFrameId = requestAnimationFrame(gameLoop);
+      }
+
+      function startNewSession() {
+        // Clear existing loops
+        if (timerIntervalId) {
+          clearInterval(timerIntervalId);
+          timerIntervalId = null;
+        }
+        if (animFrameId) {
+          cancelAnimationFrame(animFrameId);
+          animFrameId = null;
+        }
+
+        score = 0;
+        timeRemaining = SESSION_DURATION;
+        isGameOver = false;
+        lastFrameTime = 0;
+        untapIdleTimer = 0;
+        trail = [];
+        ripples = [];
+        particles = [];
+        floatingTexts = [];
+
+        gameOverModal.classList.add('hidden');
+        gameOverModal.classList.remove('flex');
+
+        // Place ball in center of box moving at a lively diagonal angle
+        const preset = SPEED_PRESETS[speedIndex];
+        ball.x = box.x + box.w * 0.5;
+        ball.y = box.y + box.h * 0.5;
+        const startAngle = (Math.random() * 0.5 + 0.25) * Math.PI * (Math.random() > 0.5 ? 1 : -1);
+        ball.vx = Math.cos(startAngle) * preset.baseSpeed;
+        ball.vy = Math.sin(startAngle) * preset.baseSpeed;
+        ball.squashX = 1;
+        ball.squashY = 1;
+
+        updateHUD();
+        drawScene();
+
+        timerIntervalId = setInterval(function () {
+          if (isGameOver) return;
+          timeRemaining -= 1;
+          updateHUD();
+          if (timeRemaining <= 0) {
+            timeRemaining = 0;
+            updateHUD();
+            endSession();
+          }
+        }, 1000);
+
+        animFrameId = requestAnimationFrame(gameLoop);
+      }
+
+      // Control Button Listeners
+      styleBtn.addEventListener('click', function () {
+        ensureAudio();
+        styleIndex = (styleIndex + 1) % BALL_STYLES.length;
+        styleBtn.textContent = BALL_STYLES[styleIndex].label;
+        drawScene();
+      });
+
+      speedBtn.addEventListener('click', function () {
+        ensureAudio();
+        speedIndex = (speedIndex + 1) % SPEED_PRESETS.length;
+        speedBtn.textContent = SPEED_PRESETS[speedIndex].label;
+      });
+
+      soundBtn.addEventListener('click', function () {
+        soundEnabled = !soundEnabled;
+        if (soundEnabled) {
+          ensureAudio();
+          soundBtn.textContent = '🔊 Sound';
+          soundBtn.className = 'px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 active:scale-95 text-emerald-200 transition';
+          playPawSqueak();
+        } else {
+          soundBtn.textContent = '🔇 Muted';
+          soundBtn.className = 'px-2.5 py-1 rounded-full text-xs font-semibold bg-stone-600/40 hover:bg-stone-600/60 active:scale-95 text-stone-300 transition';
+        }
+      });
+
+      restartTopBtn.addEventListener('click', function () {
+        ensureAudio();
+        startNewSession();
+      });
+
+      playAgainBtn.addEventListener('click', function () {
+        ensureAudio();
+        startNewSession();
+      });
+
+      window.addEventListener('resize', resizeCanvas);
+
+      window.onload = function () {
+        resizeCanvas();
+        startNewSession();
+      };
+    })();
+  </script>
+</body>
+</html>
