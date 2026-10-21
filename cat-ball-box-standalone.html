@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+</head>
+<body>
+<title>Cat Ball Box</title>
+<style>
+  /* Layout: a full-bleed play field, a cardboard box filling the phone, pill HUD over a top band */
+  :root {
+    color-scheme: dark;
+    --bg: #2b1d12;          /* floor around the box */
+    --cardboard: #b9854f;   /* box walls */
+    --floor: #f6e7cc;       /* inside the box */
+    --ink: #3b2a1a;         /* text on cream */
+    --paper: #fff6e8;       /* pills and cards */
+    --accent: #e0553d;      /* buttons and the combo */
+    --font-display: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+    --font-body: -apple-system, system-ui, "Helvetica Neue", sans-serif;
+  }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--paper);
+    font-family: var(--font-body);
+    overscroll-behavior: none;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #hud {
+    position: fixed; top: 0; left: 0; z-index: 5;
+    display: flex; gap: 8px;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 0 0 max(16px, env(safe-area-inset-left, 0px));
+    pointer-events: none;
+  }
+  .pill {
+    display: inline-block; min-width: 76px; padding: 8px 16px; border: 0; border-radius: 999px;
+    font: inherit; font-family: var(--font-display); font-size: 18px; font-weight: 800;
+    font-variant-numeric: tabular-nums; text-align: center;
+    background: var(--paper); color: var(--ink); box-shadow: 0 3px 0 rgba(0, 0, 0, 0.28);
+  }
+  #time.urgent { color: var(--accent); }
+  #mult { margin-left: 6px; font-size: 14px; color: var(--accent); }
+  #mute {
+    position: fixed; z-index: 6; top: calc(env(safe-area-inset-top, 0px) + 12px);
+    right: calc(env(safe-area-inset-right, 0px) + 16px);
+    width: 46px; min-width: 0; padding: 9px 0; font-size: 20px; line-height: 1.2;
+    touch-action: manipulation;
+  }
+  .screen {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    padding-block: 20px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    background: rgba(43, 29, 18, 0.6);
+  }
+  .card {
+    width: min(88vw, 360px); padding: 26px 22px 24px; border-radius: 26px;
+    background: var(--paper); color: var(--ink); text-align: center;
+    box-shadow: 0 10px 0 var(--cardboard);
+  }
+  .card h1, .card h2 { margin: 0 0 8px; font-family: var(--font-display); font-size: 30px; line-height: 1.1; text-wrap: balance; }
+  .card p { margin: 0 0 18px; font-size: 16px; line-height: 1.4; }
+  .best:empty { display: none; }
+  .final { font-family: var(--font-display); font-size: 64px; font-weight: 900; line-height: 1; margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
+  .stats { font-size: 15px; }
+  .btn {
+    min-width: 200px; padding: 16px 34px; border: 0; border-radius: 18px;
+    font-family: var(--font-display); font-size: 22px; font-weight: 800;
+    color: var(--paper); background: var(--accent);
+    box-shadow: 0 6px 0 rgba(0, 0, 0, 0.28); cursor: pointer; touch-action: manipulation;
+  }
+  .btn:active { transform: translateY(4px); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.28); }
+  .btn:focus-visible, #mute:focus-visible { outline: 3px solid var(--paper); outline-offset: 3px; }
+</style>
+
+<canvas id="game" aria-label="Play field"></canvas>
+<div id="hud" hidden>
+  <span class="pill" id="time">3:00</span>
+  <span class="pill" id="score"><span id="pts">0</span><span id="mult"></span></span>
+</div>
+<button class="pill" id="mute" aria-label="Sound on">🔊</button>
+
+<section class="screen" id="start">
+  <div class="card">
+    <h1>Cat Ball Box</h1>
+    <p>Swat the ball around the box with your paws. Every paw hit scores, and quick hits in a row multiply it. You have three minutes.</p>
+    <p class="best" id="bestLine"></p>
+    <button class="btn" id="startBtn">Play</button>
+  </div>
+</section>
+
+<section class="screen" id="over" hidden>
+  <div class="card">
+    <h2>Time's up!</h2>
+    <div class="final" id="final">0</div>
+    <p class="stats" id="stats"></p>
+    <button class="btn" id="againBtn">Play again</button>
+  </div>
+</section>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---- tuning -----------------------------------------------------------------
+  const SESSION_SECONDS = 180;  // one round = 3 minutes of game time
+  const SUBSTEPS = 3;           // physics steps per frame, so a fast ball can't tunnel past a paw
+  const PAW_E = 0.85;           // share of the closing speed a paw sends back
+  const WALL_E = 0.8;           // wall bounciness
+  const FRICTION = 0.3;         // rolling drag, per second
+  const TAP_SPEED = 420;        // minimum push from a fresh touch (px/s at scale 1)
+  const MIN_SPEED = 110;        // the ball never parks
+  const MAX_SPEED = 1100;
+  const COMBO_GAP = 2.5;        // seconds between hits that keep a streak alive
+  const BEST_KEY = 'catBall.best';
+  const MUTE_KEY = 'catBall.muted';
+
+  // ---- DOM, theme, storage ----------------------------------------------------
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('game');
+  const ctx = canvas.getContext('2d');
+  const hud = $('hud');
+  const timeEl = $('time'), ptsEl = $('pts'), multEl = $('mult');
+  const muteBtn = $('mute');
+  const startScreen = $('start'), overScreen = $('over');
+  const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const C = { cardboard: token('--cardboard'), floor: token('--floor'), ink: token('--ink'), paper: token('--paper') };
+  const FONT = token('--font-display');
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+  };
+
+  // ---- state ------------------------------------------------------------------
+  let W = 0, H = 0, DPR = 1, S = 1, PAW_R = 34;
+  const box = { x: 0, y: 0, w: 0, h: 0, wall: 16 };
+  const ball = { x: 0, y: 0, vx: 0, vy: 0, r: 22, spin: 0, squash: 0, sqAngle: 0 };
+  const paws = new Map();      // pointerId -> paw: every finger or paw on the glass
+  let prints = [], popups = [];
+  let state = 'idle';         // 'idle' | 'playing' | 'over'
+  let gameTime = 0, timeLeft = SESSION_SECONDS;
+  let score = 0, hits = 0, streak = 0, bestStreak = 0, mult = 1, lastHitAt = -99;
+  let best = Number(store.get(BEST_KEY)) || 0;
+  let muted = store.get(MUTE_KEY) === '1';
+  let last = 0;
+
+  // ---- sound: synthesized with Web Audio, so there are no files to load -------
+  let actx = null, master = null, noiseBuf = null, rollGain = null, lastThock = 0;
+
+  function audioInit() {
+    if (!actx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      actx = new AC();
+      master = actx.createGain();
+      master.gain.value = muted ? 0 : 0.7;
+      master.connect(actx.destination);
+      noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+      const data = noiseBuf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      // rolling rumble: looped noise through a low-pass; its level follows the ball's speed
+      const rumble = actx.createBufferSource();
+      const lp = actx.createBiquadFilter();
+      rollGain = actx.createGain();
+      rumble.buffer = noiseBuf;
+      rumble.loop = true;
+      lp.type = 'lowpass';
+      lp.frequency.value = 380;
+      rollGain.gain.value = 0;
+      rumble.connect(lp).connect(rollGain).connect(master);
+      rumble.start();
+    }
+    if (actx.state !== 'running') actx.resume().catch(() => {});
+  }
+
+  function setMuted(on) {
+    muted = on;
+    store.set(MUTE_KEY, on ? '1' : '0');
+    muteBtn.textContent = on ? '🔇' : '🔊';
+    muteBtn.setAttribute('aria-label', on ? 'Sound off' : 'Sound on');
+    if (master) master.gain.setTargetAtTime(on ? 0 : 0.7, actx.currentTime, 0.03);
+  }
+
+  function tone(freq, dur, { type = 'sine', vol = 0.25, slide = 0, when = 0 } = {}) {
+    if (!actx || muted) return;
+    const t = actx.currentTime + when;
+    const osc = actx.createOscillator();
+    const gain = actx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    if (slide) osc.frequency.exponentialRampToValueAtTime(slide, t + dur);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(master);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+  }
+
+  function click(dur, freq, vol) {              // a short band-passed noise burst: a tap or a thock
+    if (!actx || muted) return;
+    const t = actx.currentTime;
+    const src = actx.createBufferSource();
+    const bp = actx.createBiquadFilter();
+    const gain = actx.createGain();
+    src.buffer = noiseBuf;
+    bp.type = 'bandpass';
+    bp.frequency.value = freq;
+    bp.Q.value = 1.5;
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp).connect(gain).connect(master);
+    src.start(t, Math.random() * 0.8, dur + 0.02);
+  }
+
+  const sfx = {
+    boop(power) {                                // a paw hits the ball: higher and louder for a harder hit
+      const f = 340 + Math.random() * 80 + power * 160;
+      tone(f, 0.16, { type: 'triangle', vol: 0.3 + power * 0.1, slide: f * 0.5 });
+      click(0.03, 2000, 0.12);
+    },
+    thock(impact) {                              // the ball hits a wall; throttled so bounces don't pile up
+      const now = performance.now();
+      if (now - lastThock < 70) return;
+      lastThock = now;
+      click(0.05, 240, Math.min(0.2, impact / 4000));
+    },
+    tick() { tone(1400, 0.035, { type: 'square', vol: 0.05 }); },
+    start() { [523, 659, 784].forEach((f, i) => tone(f, 0.2, { vol: 0.25, when: i * 0.09 })); },
+    fanfare() { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.4, { type: 'triangle', vol: 0.28, when: i * 0.14 })); },
+    meow() {                                     // synthesized meow: a wavering sawtooth through a sweeping band-pass
+      if (!actx || muted) return;
+      const t = actx.currentTime, dur = 0.7;
+      const osc = actx.createOscillator();
+      const vib = actx.createOscillator();
+      const vibAmt = actx.createGain();
+      const bp = actx.createBiquadFilter();
+      const gain = actx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(480, t);
+      osc.frequency.linearRampToValueAtTime(760, t + 0.2);
+      osc.frequency.linearRampToValueAtTime(520, t + dur);
+      vib.frequency.value = 6;
+      vibAmt.gain.value = 14;
+      vib.connect(vibAmt).connect(osc.frequency);
+      bp.type = 'bandpass';
+      bp.Q.value = 5;
+      bp.frequency.setValueAtTime(800, t);
+      bp.frequency.linearRampToValueAtTime(1900, t + 0.2);
+      bp.frequency.linearRampToValueAtTime(900, t + dur);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.5, t + 0.08);
+      gain.gain.setValueAtTime(0.5, t + 0.4);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(bp).connect(gain).connect(master);
+      osc.start(t);
+      vib.start(t);
+      osc.stop(t + dur + 0.05);
+      vib.stop(t + dur + 0.05);
+    },
+  };
+
+  // ---- layout -----------------------------------------------------------------
+  function safeInsets() {                        // env() values, read here so the box clears notches
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;visibility:hidden;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+    document.body.append(probe);
+    const cs = getComputedStyle(probe);
+    const inset = {
+      top: parseFloat(cs.paddingTop) || 0,
+      right: parseFloat(cs.paddingRight) || 0,
+      bottom: parseFloat(cs.paddingBottom) || 0,
+      left: parseFloat(cs.paddingLeft) || 0,
+    };
+    probe.remove();
+    return inset;
+  }
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    const ins = safeInsets();
+    const top = Math.max(ins.top + 62, H * 0.14);   // room for the HUD pills
+    box.x = ins.left + 10;
+    box.y = top;
+    box.w = W - ins.left - ins.right - 20;
+    box.h = H - top - Math.max(ins.bottom, 10) - 10;
+    S = Math.min(box.w, box.h) / 380;               // physics scale, about 1 on a phone
+    PAW_R = Math.max(28, Math.min(44, Math.min(W, H) * 0.09));
+    ball.r = Math.max(16, Math.min(box.w, box.h) * 0.06);
+    clampBall();
+  }
+
+  function clampBall() {
+    const b = ball, wl = box.wall;
+    b.x = Math.min(Math.max(b.x, box.x + wl + b.r), box.x + box.w - wl - b.r);
+    b.y = Math.min(Math.max(b.y, box.y + wl + b.r), box.y + box.h - wl - b.r);
+  }
+
+  // ---- physics ----------------------------------------------------------------
+  function placeBall(speed) {
+    const a = Math.random() * Math.PI * 2;
+    ball.x = box.x + box.w / 2;
+    ball.y = box.y + box.h / 2;
+    ball.vx = Math.cos(a) * speed * S;
+    ball.vy = Math.sin(a) * speed * S;
+  }
+
+  function moveBall(h) {
+    const b = ball;
+    b.x += b.vx * h;
+    b.y += b.vy * h;
+    const k = Math.exp(-FRICTION * h);
+    b.vx *= k;
+    b.vy *= k;
+    let sp = Math.hypot(b.vx, b.vy);
+    if (sp < MIN_SPEED * S) {                       // never let it park
+      const a = sp > 1e-3 ? Math.atan2(b.vy, b.vx) : Math.random() * Math.PI * 2;
+      sp = MIN_SPEED * S;
+      b.vx = Math.cos(a) * sp;
+      b.vy = Math.sin(a) * sp;
+    } else if (sp > MAX_SPEED * S) {
+      const f = (MAX_SPEED * S) / sp;
+      b.vx *= f;
+      b.vy *= f;
+      sp *= f;
+    }
+    b.spin += (sp / b.r) * h * 0.6;                 // rolling spin, drives the wedge pattern
+  }
+
+  function pawsVsBall() {
+    const b = ball;
+    for (const p of paws.values()) {
+      const dx = b.x - p.x, dy = b.y - p.y;
+      const d = Math.hypot(dx, dy);
+      const reach = b.r + PAW_R;
+      if (d >= reach) {
+        p.touching = false;
+        p.counted = false;
+        continue;
+      }
+      const nx = d > 1e-4 ? dx / d : 1, ny = d > 1e-4 ? dy / d : 0;
+      b.x = p.x + nx * reach;                       // the ball rests on the edge of the paw
+      b.y = p.y + ny * reach;
+      const fresh = !p.touching;
+      p.touching = true;
+      const vn = (b.vx - p.vx) * nx + (b.vy - p.vy) * ny;   // negative while closing in
+      if (vn >= 0 && !fresh) continue;
+      let out = vn < 0 ? -vn * PAW_E : 0;           // bounce back: a share of the closing speed
+      if (fresh) out = Math.max(out, TAP_SPEED * S); // a tap always gives a push
+      const dv = Math.max(out - vn, 0);
+      b.vx += dv * nx;
+      b.vy += dv * ny;
+      if (!p.counted && state === 'playing' && (fresh || out > 240 * S)) {
+        p.counted = true;
+        addHit(nx, ny, out);
+      }
+    }
+  }
+
+  function addHit(nx, ny, out) {
+    const b = ball;
+    if (gameTime - lastHitAt > COMBO_GAP) streak = 0;
+    streak++;
+    lastHitAt = gameTime;
+    bestStreak = Math.max(bestStreak, streak);
+    mult = Math.min(5, 1 + Math.floor(streak / 3));
+    const power = Math.min(1, out / (800 * S));
+    const pts = Math.round((10 + power * 20) * mult);
+    score += pts;
+    hits++;
+    popups.push({ x: b.x, y: b.y - b.r - 6, text: `+${pts}`, life: 1 });
+    b.squash = 1;
+    b.sqAngle = Math.atan2(ny, nx);
+    sfx.boop(power);
+    if (streak % 5 === 0) {
+      sfx.meow();
+      popups.push({ x: b.x, y: b.y - b.r - 34, text: 'MEOW!', life: 1 });
+    }
+  }
+
+  function wallBounce() {
+    const b = ball, wl = box.wall;
+    const L = box.x + wl + b.r, R = box.x + box.w - wl - b.r;
+    const T = box.y + wl + b.r, B = box.y + box.h - wl - b.r;
+    let impact = 0, ang = 0;
+    if (b.x < L) { impact = Math.max(impact, -b.vx); ang = 0; b.x = L; b.vx = Math.abs(b.vx) * WALL_E; }
+    else if (b.x > R) { impact = Math.max(impact, b.vx); ang = Math.PI; b.x = R; b.vx = -Math.abs(b.vx) * WALL_E; }
+    if (b.y < T) { impact = Math.max(impact, -b.vy); ang = Math.PI / 2; b.y = T; b.vy = Math.abs(b.vy) * WALL_E; }
+    else if (b.y > B) { impact = Math.max(impact, b.vy); ang = -Math.PI / 2; b.y = B; b.vy = -Math.abs(b.vy) * WALL_E; }
+    if (impact > 150 * S) {
+      if (state === 'playing') sfx.thock(impact);
+      b.squash = Math.max(b.squash, Math.min(0.6, impact / (1000 * S)));
+      b.sqAngle = ang;
+    }
+  }
+
+  function updateEffects(dt) {
+    for (const p of prints) p.life -= dt / 1.4;
+    for (const p of popups) {
+      p.life -= dt;
+      p.y -= 50 * dt;
+    }
+    prints = prints.filter((p) => p.life > 0);
+    popups = popups.filter((p) => p.life > 0);
+    ball.squash = Math.max(0, ball.squash - dt * 4);
+  }
+
+  function update(dt) {
+    for (const p of paws.values()) {                // paw speed, smoothed: a swat's speed is what flings the ball
+      const d = Math.max(dt, 1e-3);
+      p.vx = p.vx * 0.5 + ((p.x - p.px) / d) * 0.5;
+      p.vy = p.vy * 0.5 + ((p.y - p.py) / d) * 0.5;
+      p.px = p.x;
+      p.py = p.y;
+    }
+    if (state === 'playing') {
+      const before = Math.ceil(timeLeft);
+      gameTime += dt;
+      timeLeft = Math.max(0, SESSION_SECONDS - gameTime);
+      if (timeLeft <= 0) {
+        endGame();
+        return;
+      }
+      if (timeLeft <= 10 && Math.ceil(timeLeft) !== before) sfx.tick();
+    }
+    for (let i = 0; i < SUBSTEPS; i++) {
+      moveBall(dt / SUBSTEPS);
+      pawsVsBall();
+      wallBounce();
+    }
+    updateEffects(dt);
+    if (rollGain) {
+      const level = state === 'playing' ? Math.min(0.06, Math.hypot(ball.vx, ball.vy) / 10000) : 0;
+      rollGain.gain.setTargetAtTime(level, actx.currentTime, 0.1);
+    }
+  }
+
+  // ---- drawing ----------------------------------------------------------------
+  const WEDGES = ['#ff6f59', '#ffd166', '#06d6a0', '#118ab2', '#ef476f', '#fff6e8'];
+
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawPrint(x, y, angle, alpha, s) {    // a paw print: pad plus four toe beans
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#6b4426';
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.2, s * 0.5, s * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+    for (const [tx, ty] of [[-0.5, -0.5], [-0.17, -0.82], [0.17, -0.82], [0.5, -0.5]]) {
+      ctx.beginPath();
+      ctx.ellipse(tx * s, ty * s, s * 0.18, s * 0.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawBall() {                           // a beach ball: wedges spin with the roll, squashes on hits
+    const b = ball, sq = b.squash, n = WEDGES.length;
+    ctx.fillStyle = 'rgba(40, 20, 10, 0.25)';
+    ctx.beginPath();
+    ctx.ellipse(b.x + 3, b.y + 5, b.r * 1.02, b.r * 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(b.sqAngle);
+    ctx.scale(1 - sq * 0.2, 1 + sq * 0.2);        // flattens along the hit direction
+    ctx.rotate(-b.sqAngle);
+    ctx.beginPath();
+    ctx.arc(0, 0, b.r, 0, Math.PI * 2);
+    ctx.clip();
+    for (let i = 0; i < n; i++) {
+      const a0 = b.spin + (i * Math.PI * 2) / n, a1 = b.spin + ((i + 1) * Math.PI * 2) / n;
+      ctx.fillStyle = WEDGES[i];
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, b.r * 1.5, a0, a1);
+      ctx.closePath();
+      ctx.fill();
+    }
+    const shade = ctx.createRadialGradient(-b.r * 0.35, -b.r * 0.4, b.r * 0.05, 0, 0, b.r);
+    shade.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+    shade.addColorStop(0.45, 'rgba(255, 255, 255, 0)');
+    shade.addColorStop(1, 'rgba(40, 20, 10, 0.35)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(-b.r, -b.r, b.r * 2, b.r * 2);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(59, 42, 26, 0.6)';
+    ctx.beginPath();
+    ctx.arc(0, 0, b.r - 1, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const { x, y, w, h, wall } = box;
+    rr(x, y, w, h, 18);                           // the cardboard box
+    ctx.fillStyle = C.cardboard;
+    ctx.fill();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = C.ink;
+    ctx.font = `800 10px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('THIS SIDE UP', x + w / 2, y + wall / 2);
+    ctx.globalAlpha = 1;
+
+    const ix = x + wall, iy = y + wall, iw = w - wall * 2, ih = h - wall * 2;
+    ctx.save();
+    rr(ix, iy, iw, ih, 6);
+    ctx.clip();
+    ctx.fillStyle = C.floor;
+    ctx.fillRect(ix, iy, iw, ih);
+    ctx.strokeStyle = 'rgba(120, 80, 40, 0.09)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let gx = ix + 20; gx < ix + iw; gx += 40) { ctx.moveTo(gx, iy); ctx.lineTo(gx, iy + ih); }
+    for (let gy = iy + 20; gy < iy + ih; gy += 40) { ctx.moveTo(ix, gy); ctx.lineTo(ix + iw, gy); }
+    ctx.stroke();
+    for (const p of prints) drawPrint(p.x, p.y, p.a, Math.max(0, p.life) * 0.5, PAW_R * 0.8);
+    for (const p of paws.values()) drawPrint(p.x, p.y, p.a, 0.4, PAW_R * 0.8);
+    drawBall();
+    ctx.restore();
+
+    ctx.font = `900 20px ${FONT}`;                // popups sit above the box, unclipped
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = C.ink;
+    for (const p of popups) {
+      ctx.globalAlpha = Math.min(1, p.life * 2);
+      ctx.strokeText(p.text, p.x, p.y);
+      ctx.fillStyle = C.paper;
+      ctx.fillText(p.text, p.x, p.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function setText(el, text) {
+    if (el.textContent !== text) el.textContent = text;
+  }
+
+  function updateHud() {
+    const secs = Math.ceil(timeLeft);
+    setText(timeEl, `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
+    timeEl.classList.toggle('urgent', state === 'playing' && secs <= 10);
+    setText(ptsEl, String(score));
+    const comboLive = state === 'playing' && streak >= 3 && gameTime - lastHitAt <= COMBO_GAP;
+    setText(multEl, comboLive ? `x${mult}` : '');
+  }
+
+  function frame(now) {
+    const dt = Math.min(1 / 30, Math.max(0, (now - last) / 1000));   // a backgrounded tab can't skip ahead
+    last = now;
+    update(dt);
+    draw();
+    updateHud();
+    requestAnimationFrame(frame);
+  }
+
+  // ---- rounds -----------------------------------------------------------------
+  function startGame() {
+    audioInit();
+    gameTime = 0;
+    timeLeft = SESSION_SECONDS;
+    score = 0;
+    hits = 0;
+    streak = 0;
+    bestStreak = 0;
+    mult = 1;
+    lastHitAt = -99;
+    paws.clear();
+    prints = [];
+    popups = [];
+    placeBall(480);
+    state = 'playing';
+    startScreen.hidden = true;
+    overScreen.hidden = true;
+    hud.hidden = false;
+    sfx.start();
+  }
+
+  function endGame() {
+    state = 'over';
+    paws.clear();
+    const newBest = score > best;
+    if (newBest) {
+      best = score;
+      store.set(BEST_KEY, String(best));
+    }
+    $('final').textContent = String(score);
+    $('stats').textContent = `${hits} paw ${hits === 1 ? 'hit' : 'hits'} · best streak ${bestStreak} · ${newBest ? 'New best!' : `Best ${best}`}`;
+    hud.hidden = true;
+    overScreen.hidden = false;
+    sfx.fanfare();
+    setTimeout(sfx.meow, 700);
+  }
+
+  // ---- input: every paw on the glass is a circle that can knock the ball ------
+  canvas.addEventListener('pointerdown', (e) => {
+    if (state !== 'playing') return;
+    e.preventDefault();
+    const a = Math.random() * Math.PI * 2;
+    paws.set(e.pointerId, { x: e.clientX, y: e.clientY, px: e.clientX, py: e.clientY, vx: 0, vy: 0, a, touching: false, counted: false });
+    prints.push({ x: e.clientX, y: e.clientY, a, life: 1 });
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    const p = paws.get(e.pointerId);
+    if (p) {
+      p.x = e.clientX;
+      p.y = e.clientY;
+    }
+  });
+  const lift = (e) => paws.delete(e.pointerId);
+  canvas.addEventListener('pointerup', lift);
+  canvas.addEventListener('pointercancel', lift);
+
+  $('startBtn').addEventListener('click', startGame);
+  $('againBtn').addEventListener('click', startGame);
+  muteBtn.addEventListener('click', () => setMuted(!muted));
+  document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('visibilitychange', () => {
+    if (actx && !document.hidden) actx.resume().catch(() => {});
+  });
+  window.addEventListener('resize', resize);
+
+  // ---- start ------------------------------------------------------------------
+  resize();
+  placeBall(300);
+  setMuted(muted);
+  $('bestLine').textContent = best ? `Best so far: ${best}` : '';
+  last = performance.now();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
