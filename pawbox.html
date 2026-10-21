@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>PawBox — Cat Ball Game</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #1c140d;
+      color: #fef3c7;
+    }
+    #gameCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      cursor: pointer;
+    }
+    .hud-pill {
+      background: rgba(28, 20, 13, 0.82);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(251, 191, 36, 0.28);
+    }
+    .modal-backdrop {
+      background: rgba(15, 10, 6, 0.82);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+  </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden flex flex-col justify-between select-none">
+
+  <!-- Top Compact HUD for Human Owner -->
+  <header class="relative z-20 flex items-center justify-between gap-2 px-3 py-2 sm:px-5 sm:py-2.5 pointer-events-auto">
+    <!-- Left: Score & Timer -->
+    <div class="flex items-center gap-2 sm:gap-3">
+      <div class="hud-pill rounded-2xl px-3 py-1.5 flex items-center gap-2 shadow-lg">
+        <span class="text-lg sm:text-xl" aria-hidden="true">🐾</span>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-amber-300/80 font-bold leading-none">Paw Hits</div>
+          <div id="scoreDisplay" class="text-lg sm:text-2xl font-black text-amber-400 leading-tight tabular-nums">0</div>
+        </div>
+      </div>
+
+      <div class="hud-pill rounded-2xl px-3 py-1.5 flex items-center gap-2 shadow-lg">
+        <span class="text-lg sm:text-xl" aria-hidden="true">⏱️</span>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-amber-300/80 font-bold leading-none">Time Left</div>
+          <div id="timerDisplay" class="text-lg sm:text-2xl font-black text-emerald-400 leading-tight tabular-nums">03:00</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Quick Controls (Sound Type, Ball Style, Mute, Restart) -->
+    <div class="flex items-center gap-1.5 sm:gap-2">
+      <button id="ballStyleBtn" type="button" title="Change Ball Style"
+        class="hud-pill hover:bg-amber-900/40 active:scale-95 transition rounded-xl px-2.5 py-2 text-xs sm:text-sm font-semibold text-amber-100 flex items-center gap-1.5 shadow">
+        <span id="ballStyleIcon">🎾</span>
+        <span id="ballStyleLabel" class="hidden md:inline">Yellow Ball</span>
+      </button>
+
+      <button id="soundModeBtn" type="button" title="Change Toy Sound"
+        class="hud-pill hover:bg-amber-900/40 active:scale-95 transition rounded-xl px-2.5 py-2 text-xs sm:text-sm font-semibold text-amber-100 flex items-center gap-1.5 shadow">
+        <span>🔔</span>
+        <span id="soundModeLabel" class="hidden sm:inline">Chirp &amp; Bell</span>
+      </button>
+
+      <button id="muteBtn" type="button" title="Toggle Sound (M)"
+        class="hud-pill hover:bg-amber-900/40 active:scale-95 transition rounded-xl px-2.5 py-2 text-xs sm:text-sm font-semibold text-amber-100 flex items-center gap-1 shadow">
+        <span id="muteIcon">🔊</span>
+        <span id="muteLabel" class="hidden lg:inline">Sound On</span>
+      </button>
+
+      <button id="quickRestartBtn" type="button" title="Reset 3-Min Session"
+        class="hud-pill hover:bg-amber-900/40 active:scale-95 transition rounded-xl px-2.5 py-2 text-xs sm:text-sm font-semibold text-amber-200 flex items-center gap-1 shadow">
+        <span>🔄</span>
+        <span class="hidden sm:inline">Reset</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Play Box Canvas -->
+  <main id="canvasContainer" class="relative flex-1 w-full h-full overflow-hidden">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Floating Combo / Hit Toast -->
+    <div id="hitBanner" class="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 z-10 opacity-0 transition-opacity duration-200">
+      <div id="hitBannerText" class="px-3.5 py-1 rounded-full bg-amber-400/95 text-stone-950 font-extrabold text-xs sm:text-sm tracking-wide shadow-lg">
+        PAW BOUNCE! +1
+      </div>
+    </div>
+  </main>
+
+  <!-- Start Screen Modal (Unlocks iOS Web Audio on First Tap) -->
+  <div id="startModal" class="modal-backdrop fixed inset-0 z-30 flex items-center justify-center p-4">
+    <div class="w-full max-w-md rounded-3xl bg-stone-900/95 border-2 border-amber-500/40 p-6 sm:p-8 text-center shadow-2xl">
+      <div class="mx-auto mb-3 w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-4xl shadow-inner">
+        🐱
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-black text-amber-300 tracking-tight">PawBox Cat Game</h1>
+      <p class="mt-2 text-sm sm:text-base text-amber-100/80 leading-relaxed">
+        Lay your iPhone flat for your cat! A bright high-contrast ball rolls inside the wooden box—every paw tap makes it squeak, bounce, and dart in a new direction.
+      </p>
+
+      <div class="mt-5 grid grid-cols-3 gap-2 text-left bg-stone-950/70 p-3 rounded-2xl border border-stone-800 text-xs">
+        <div class="p-2 rounded-xl bg-stone-900/90">
+          <div class="font-bold text-amber-400">⏱️ 3 Minutes</div>
+          <div class="text-stone-300 mt-0.5">Timed play session</div>
+        </div>
+        <div class="p-2 rounded-xl bg-stone-900/90">
+          <div class="font-bold text-emerald-400">🐾 Paw Tap</div>
+          <div class="text-stone-300 mt-0.5">Bounces &amp; scores</div>
+        </div>
+        <div class="p-2 rounded-xl bg-stone-900/90">
+          <div class="font-bold text-sky-400">🔊 Cat Audio</div>
+          <div class="text-stone-300 mt-0.5">Chirps, bells &amp; squeaks</div>
+        </div>
+      </div>
+
+      <button id="startGameBtn" type="button"
+        class="mt-6 w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-yellow-300 active:scale-98 text-stone-950 font-black text-lg sm:text-xl shadow-xl shadow-amber-500/20 transition flex items-center justify-center gap-2">
+        <span>🐾</span>
+        <span>Start 3-Minute Session</span>
+      </button>
+      <p class="mt-3 text-[11px] text-stone-400">
+        Tip: Turn off Silent Mode on your iPhone so your cat can hear the toy sounds.
+      </p>
+    </div>
+  </div>
+
+  <!-- Game Over / 3-Minute Score Summary Modal -->
+  <div id="gameOverModal" class="modal-backdrop fixed inset-0 z-30 hidden items-center justify-center p-4">
+    <div class="w-full max-w-md rounded-3xl bg-stone-900/95 border-2 border-amber-400/50 p-6 sm:p-8 text-center shadow-2xl">
+      <div class="mx-auto mb-2 w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-4xl">
+        🏆
+      </div>
+      <div class="text-xs font-extrabold uppercase tracking-widest text-amber-400">3:00 Session Complete!</div>
+      <h2 id="catRankTitle" class="mt-1 text-2xl sm:text-3xl font-black text-white">Apex Paw Hunter!</h2>
+
+      <div class="mt-5 rounded-2xl bg-stone-950/90 border border-amber-500/30 p-4">
+        <div class="text-xs uppercase tracking-wider text-amber-200/70 font-semibold">Final Paw Score</div>
+        <div id="finalScoreValue" class="text-5xl sm:text-6xl font-black text-amber-400 my-1 tabular-nums">0</div>
+        <div class="text-xs text-stone-400">Direct Ball Bounces in 3 Minutes</div>
+      </div>
+
+      <div class="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+        <div class="rounded-xl bg-stone-800/70 p-2.5 border border-stone-700/60">
+          <div class="text-stone-400">Total Swipes</div>
+          <div id="finalSwipesValue" class="text-base sm:text-lg font-extrabold text-amber-200 mt-0.5 tabular-nums">0</div>
+        </div>
+        <div class="rounded-xl bg-stone-800/70 p-2.5 border border-stone-700/60">
+          <div class="text-stone-400">Best Streak</div>
+          <div id="finalStreakValue" class="text-base sm:text-lg font-extrabold text-emerald-300 mt-0.5 tabular-nums">0</div>
+        </div>
+        <div class="rounded-xl bg-stone-800/70 p-2.5 border border-stone-700/60">
+          <div class="text-stone-400">Best Score</div>
+          <div id="bestScoreValue" class="text-base sm:text-lg font-extrabold text-sky-300 mt-0.5 tabular-nums">0</div>
+        </div>
+      </div>
+
+      <button id="playAgainBtn" type="button"
+        class="mt-6 w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-500 hover:from-emerald-300 hover:to-teal-300 active:scale-98 text-stone-950 font-black text-lg sm:text-xl shadow-xl shadow-emerald-500/20 transition flex items-center justify-center gap-2">
+        <span>🔄</span>
+        <span>Play Again (3:00)</span>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      // --- DOM Elements ---
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+      const container = document.getElementById('canvasContainer');
+
+      const scoreDisplay = document.getElementById('scoreDisplay');
+      const timerDisplay = document.getElementById('timerDisplay');
+      const hitBanner = document.getElementById('hitBanner');
+      const hitBannerText = document.getElementById('hitBannerText');
+
+      const ballStyleBtn = document.getElementById('ballStyleBtn');
+      const ballStyleIcon = document.getElementById('ballStyleIcon');
+      const ballStyleLabel = document.getElementById('ballStyleLabel');
+
+      const soundModeBtn = document.getElementById('soundModeBtn');
+      const soundModeLabel = document.getElementById('soundModeLabel');
+
+      const muteBtn = document.getElementById('muteBtn');
+      const muteIcon = document.getElementById('muteIcon');
+      const muteLabel = document.getElementById('muteLabel');
+
+      const quickRestartBtn = document.getElementById('quickRestartBtn');
+      const startModal = document.getElementById('startModal');
+      const startGameBtn = document.getElementById('startGameBtn');
+
+      const gameOverModal = document.getElementById('gameOverModal');
+      const catRankTitle = document.getElementById('catRankTitle');
+      const finalScoreValue = document.getElementById('finalScoreValue');
+      const finalSwipesValue = document.getElementById('finalSwipesValue');
+      const finalStreakValue = document.getElementById('finalStreakValue');
+      const bestScoreValue = document.getElementById('bestScoreValue');
+      const playAgainBtn = document.getElementById('playAgainBtn');
+
+      // --- Constants & Configurations ---
+      const SESSION_SECONDS = 180; // 3 minutes
+
+      // Cats have dichromatic vision optimized for bright yellows, blues, and high-contrast greens
+      const BALL_STYLES = [
+        {
+          name: 'Yellow Ball',
+          icon: '🎾',
+          primary: '#facc15',
+          secondary: '#fef08a',
+          stripe: '#ffffff',
+          glow: 'rgba(250, 204, 21, 0.55)'
+        },
+        {
+          name: 'Blue Bell Ball',
+          icon: '🔵',
+          primary: '#38bdf8',
+          secondary: '#bae6fd',
+          stripe: '#facc15',
+          glow: 'rgba(56, 189, 248, 0.55)'
+        },
+        {
+          name: 'Neon Bug Orb',
+          icon: '🟢',
+          primary: '#4ade80',
+          secondary: '#dcfce7',
+          stripe: '#facc15',
+          glow: 'rgba(74, 222, 128, 0.6)'
+        }
+      ];
+
+      const SOUND_MODES = [
+        'Chirp & Bell',
+        'Squeaky Toy',
+        'Bouncy Boing'
+      ];
+
+      // --- Game State ---
+      let width = 0;
+      let height = 0;
+      let dpr = 1;
+      let boxMargin = 22;
+
+      let gameState = 'start'; // 'start' | 'playing' | 'ended'
+      let score = 0;
+      let totalSwipes = 0;
+      let currentStreak = 0;
+      let bestStreak = 0;
+      let bestScore = loadBestScore();
+      let timeRemaining = SESSION_SECONDS;
+      let lastFrameTime = 0;
+      let animFrameId = null;
+      let timerIntervalId = null;
+      let bannerTimeoutId = null;
+
+      let ballStyleIdx = 0;
+      let soundModeIdx = 0;
+      let isMuted = false;
+
+      // Ball physics object
+      const ball = {
+        x: 200,
+        y: 200,
+        vx: 260,
+        vy: 210,
+        radius: 36,
+        angle: 0,
+        angularVel: 4,
+        hitScale: 1,
+        hitFlash: 0,
+        wanderTimer: 0
+      };
+
+      // Visual effects arrays
+      let particles = [];
+      let ripples = [];
+      let pawPrints = [];
+      let trail = [];
+
+      // --- Safe LocalStorage ---
+      function loadBestScore() {
+        try {
+          const val = localStorage.getItem('pawbox_best_score');
+          return val ? parseInt(val, 10) || 0 : 0;
+        } catch (e) {
+          return 0;
+        }
+      }
+
+      function saveBestScore(newBest) {
+        try {
+          localStorage.setItem('pawbox_best_score', String(newBest));
+        } catch (e) {
+          // Ignore storage errors in sandboxed iframes
+        }
+      }
+
+      // --- Web Audio API Synthesizer (Cat-Friendly Sounds) ---
+      let audioCtx = null;
+
+      function ensureAudio() {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+          }
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+      }
+
+      function playPawHitSound() {
+        if (isMuted) return;
+        ensureAudio();
+        if (!audioCtx) return;
+
+        const now = audioCtx.currentTime;
+        const mode = SOUND_MODES[soundModeIdx];
+
+        if (mode === 'Chirp & Bell') {
+          // High frequency bird-like chirp + jingle harmonic that cats love
+          const osc1 = audioCtx.createOscillator();
+          const osc2 = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+
+          osc1.type = 'sine';
+          osc2.type = 'triangle';
+
+          const baseFreq = 1200 + Math.random() * 600;
+          osc1.frequency.setValueAtTime(baseFreq, now);
+          osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.85, now + 0.09);
+          osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.2, now + 0.18);
+
+          osc2.frequency.setValueAtTime(baseFreq * 2, now);
+          osc2.frequency.exponentialRampToValueAtTime(baseFreq * 2.5, now + 0.14);
+
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.28, now + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+          osc1.connect(gain);
+          osc2.connect(gain);
+          gain.connect(audioCtx.destination);
+
+          osc1.start(now);
+          osc2.start(now);
+          osc1.stop(now + 0.23);
+          osc2.stop(now + 0.23);
+        } else if (mode === 'Squeaky Toy') {
+          // Dual-sweep mouse/toy squeak
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+
+          const startF = 950 + Math.random() * 350;
+          osc.frequency.setValueAtTime(startF, now);
+          osc.frequency.exponentialRampToValueAtTime(startF * 2.1, now + 0.07);
+          osc.frequency.exponentialRampToValueAtTime(startF * 0.9, now + 0.16);
+
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.3, now + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.19);
+        } else {
+          // Bouncy Boing
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'triangle';
+
+          const f = 320 + Math.random() * 180;
+          osc.frequency.setValueAtTime(f, now);
+          osc.frequency.exponentialRampToValueAtTime(f * 2.6, now + 0.18);
+
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.32, now + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.25);
+        }
+      }
+
+      function playWallBounceSound(speed) {
+        if (isMuted || gameState !== 'playing') return;
+        ensureAudio();
+        if (!audioCtx) return;
+
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        // Soft wooden box tap + faint bell jingle
+        osc.type = 'sine';
+        const pitch = Math.min(520, Math.max(180, 160 + speed * 0.35));
+        osc.frequency.setValueAtTime(pitch, now);
+        osc.frequency.exponentialRampToValueAtTime(pitch * 0.55, now + 0.065);
+
+        const vol = Math.min(0.14, Math.max(0.03, speed / 4500));
+        gain.gain.setValueAtTime(vol, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 0.075);
+      }
+
+      function playFloorTapSound() {
+        if (isMuted || gameState !== 'playing') return;
+        ensureAudio();
+        if (!audioCtx) return;
+
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(620, now);
+        osc.frequency.exponentialRampToValueAtTime(920, now + 0.05);
+
+        gain.gain.setValueAtTime(0.07, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 0.065);
+      }
+
+      function playSessionEndSound() {
+        if (isMuted) return;
+        ensureAudio();
+        if (!audioCtx) return;
+
+        const notes = [523.25, 659.25, 783.99, 1046.5];
+        notes.forEach((freq, idx) => {
+          const now = audioCtx.currentTime + idx * 0.11;
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now);
+
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.22, now + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.3);
+        });
+      }
+
+      // --- Canvas Sizing ---
+      function resizeCanvas() {
+        const rect = container.getBoundingClientRect();
+        width = Math.max(280, rect.width);
+        height = Math.max(280, rect.height);
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        // Responsive ball size & box wall thickness for iPhone / iPad / desktop
+        const minDim = Math.min(width, height);
+        boxMargin = Math.max(16, Math.min(28, Math.round(minDim * 0.045)));
+        ball.radius = Math.max(28, Math.min(44, Math.round(minDim * 0.085)));
+
+        // Clamp ball inside box bounds
+        const minX = boxMargin + ball.radius;
+        const maxX = width - boxMargin - ball.radius;
+        const minY = boxMargin + ball.radius;
+        const maxY = height - boxMargin - ball.radius;
+
+        ball.x = Math.max(minX, Math.min(maxX, ball.x));
+        ball.y = Math.max(minY, Math.min(maxY, ball.y));
+
+        drawScene();
+      }
+
+      // --- Initialize / Reset Ball & Session ---
+      function resetBallInCenter() {
+        ball.x = width / 2;
+        ball.y = height / 2;
+        const initialSpeed = Math.min(420, Math.max(270, Math.min(width, height) * 0.68));
+        const randomAngle = (Math.random() * Math.PI * 2);
+        // Avoid purely horizontal or vertical angles
+        const safeAngle = Math.abs(Math.sin(randomAngle)) < 0.25 ? randomAngle + 0.45 : randomAngle;
+        ball.vx = Math.cos(safeAngle) * initialSpeed;
+        ball.vy = Math.sin(safeAngle) * initialSpeed;
+        ball.angle = 0;
+        ball.angularVel = (Math.random() > 0.5 ? 1 : -1) * 5;
+        ball.hitScale = 1;
+        ball.hitFlash = 0;
+        ball.wanderTimer = 0;
+        trail = [];
+      }
+
+      function formatTime(sec) {
+        const clamped = Math.max(0, Math.ceil(sec));
+        const m = Math.floor(clamped / 60);
+        const s = clamped % 60;
+        return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+      }
+
+      function updateHUD() {
+        scoreDisplay.textContent = String(score);
+        timerDisplay.textContent = formatTime(timeRemaining);
+        if (timeRemaining <= 30) {
+          timerDisplay.className = 'text-lg sm:text-2xl font-black text-rose-400 leading-tight tabular-nums animate-pulse';
+        } else {
+          timerDisplay.className = 'text-lg sm:text-2xl font-black text-emerald-400 leading-tight tabular-nums';
+        }
+      }
+
+      function showHitBanner(text) {
+        hitBannerText.textContent = text;
+        hitBanner.classList.remove('opacity-0');
+        hitBanner.classList.add('opacity-100');
+        if (bannerTimeoutId) clearTimeout(bannerTimeoutId);
+        bannerTimeoutId = setTimeout(() => {
+          hitBanner.classList.remove('opacity-100');
+          hitBanner.classList.add('opacity-0');
+        }, 650);
+      }
+
+      function startSession() {
+        ensureAudio();
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        if (timerIntervalId) clearInterval(timerIntervalId);
+
+        score = 0;
+        totalSwipes = 0;
+        currentStreak = 0;
+        bestStreak = 0;
+        timeRemaining = SESSION_SECONDS;
+        particles = [];
+        ripples = [];
+        pawPrints = [];
+
+        startModal.classList.add('hidden');
+        gameOverModal.classList.add('hidden');
+        gameOverModal.classList.remove('flex');
+
+        gameState = 'playing';
+        resetBallInCenter();
+        updateHUD();
+
+        // Play a welcoming chirp so the cat immediately looks at the screen
+        playPawHitSound();
+
+        // Countdown timer
+        timerIntervalId = setInterval(() => {
+          if (gameState !== 'playing') return;
+          timeRemaining -= 1;
+          updateHUD();
+          if (timeRemaining <= 0) {
+            timeRemaining = 0;
+            updateHUD();
+            endSession();
+          }
+        }, 1000);
+
+        lastFrameTime = performance.now();
+        animFrameId = requestAnimationFrame(gameLoop);
+      }
+
+      function endSession() {
+        gameState = 'ended';
+        if (timerIntervalId) {
+          clearInterval(timerIntervalId);
+          timerIntervalId = null;
+        }
+        if (animFrameId) {
+          cancelAnimationFrame(animFrameId);
+          animFrameId = null;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          saveBestScore(bestScore);
+        }
+
+        // Determine fun cat rank
+        let rank = 'Curious Napper 😺';
+        if (score >= 45) {
+          rank = 'Supreme Lightning Panther ⚡🐾';
+        } else if (score >= 25) {
+          rank = 'Apex Box Hunter 🏆🐱';
+        } else if (score >= 10) {
+          rank = 'Playful Pouncer 🎾😺';
+        } else if (score >= 1) {
+          rank = 'Gentle Paw Explorer 🐾';
+        }
+
+        catRankTitle.textContent = rank;
+        finalScoreValue.textContent = String(score);
+        finalSwipesValue.textContent = String(totalSwipes);
+        finalStreakValue.textContent = String(bestStreak);
+        bestScoreValue.textContent = String(bestScore);
+
+        gameOverModal.classList.remove('hidden');
+        gameOverModal.classList.add('flex');
+        playSessionEndSound();
+        drawScene();
+      }
+
+      // --- Visual Effects Helpers ---
+      function spawnHitParticles(x, y, color) {
+        for (let i = 0; i < 18; i++) {
+          const angle = (Math.PI * 2 * i) / 18 + (Math.random() - 0.5) * 0.35;
+          const speed = 110 + Math.random() * 240;
+          particles.push({
+            x,
+            y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            radius: 3 + Math.random() * 5,
+            color: i % 2 === 0 ? color : '#ffffff',
+            alpha: 1,
+            life: 0.45 + Math.random() * 0.25
+          });
+        }
+      }
+
+      function spawnRipple(x, y, maxRadius, color) {
+        ripples.push({
+          x,
+          y,
+          radius: 10,
+          maxRadius,
+          color,
+          alpha: 0.9
+        });
+      }
+
+      function spawnPawPrint(x, y, hit) {
+        pawPrints.push({
+          x,
+          y,
+          angle: (Math.random() - 0.5) * 0.9,
+          alpha: 0.85,
+          hit
+        });
+      }
+
+      // --- Paw Tap / Touch Interaction ---
+      function handlePawTap(clientX, clientY) {
+        if (gameState !== 'playing') return;
+        ensureAudio();
+
+        const rect = canvas.getBoundingClientRect();
+        const tapX = clientX - rect.left;
+        const tapY = clientY - rect.top;
+
+        totalSwipes += 1;
+
+        const dx = ball.x - tapX;
+        const dy = ball.y - tapY;
+        const dist = Math.hypot(dx, dy);
+
+        // Generous cat-paw hit zone (ball radius + 34px forgiveness for fluffy paws)
+        const hitThreshold = ball.radius + 34;
+
+        if (dist <= hitThreshold) {
+          // Direct Paw Hit!
+          score += 1;
+          currentStreak += 1;
+          if (currentStreak > bestStreak) bestStreak = currentStreak;
+          updateHUD();
+
+          // Calculate new bounce / deflection direction
+          // If the paw tapped the edge of the ball, bounce away from the paw with an exciting random twist;
+          // if tapped dead-center, pick a dramatic new angle away from current trajectory
+          let newAngle;
+          if (dist > 6) {
+            const awayAngle = Math.atan2(dy, dx);
+            const randomTwist = (Math.random() - 0.5) * 1.15;
+            newAngle = awayAngle + randomTwist;
+          } else {
+            const currentAngle = Math.atan2(ball.vy, ball.vx);
+            newAngle = currentAngle + Math.PI * (0.55 + Math.random() * 0.9);
+          }
+
+          // Boost speed on paw hit so the ball darts across the box
+          const baseMaxSpeed = Math.min(760, Math.max(480, Math.min(width, height) * 1.15));
+          const newSpeed = baseMaxSpeed * (0.85 + Math.random() * 0.28);
+
+          ball.vx = Math.cos(newAngle) * newSpeed;
+          ball.vy = Math.sin(newAngle) * newSpeed;
+          ball.angularVel = (Math.random() > 0.5 ? 1 : -1) * (10 + Math.random() * 8);
+          ball.hitScale = 1.34;
+          ball.hitFlash = 1.0;
+
+          const style = BALL_STYLES[ballStyleIdx];
+          spawnHitParticles(ball.x, ball.y, style.primary);
+          spawnRipple(ball.x, ball.y, ball.radius * 2.7, style.primary);
+          spawnPawPrint(tapX, tapY, true);
+          playPawHitSound();
+
+          const streakMsg = currentStreak >= 3 ? `PAW STREAK x${currentStreak}! +1` : 'PAW BOUNCE! +1';
+          showHitBanner(streakMsg);
+        } else {
+          // Missed the ball: reset streak, show subtle paw print on box floor, and slightly startle/attract ball
+          currentStreak = 0;
+          spawnRipple(tapX, tapY, 45, 'rgba(251, 191, 36, 0.45)');
+          spawnPawPrint(tapX, tapY, false);
+          playFloorTapSound();
+
+          // Slight playful nudge so the ball reacts to nearby floor vibrations
+          const nudgeAngle = Math.atan2(tapY - ball.y, tapX - ball.x) + (Math.random() - 0.5) * 1.4;
+          ball.vx += Math.cos(nudgeAngle) * 75;
+          ball.vy += Math.sin(nudgeAngle) * 75;
+        }
+      }
+
+      // --- Physics & Animation Loop ---
+      function updatePhysics(dt) {
+        const minX = boxMargin + ball.radius;
+        const maxX = width - boxMargin - ball.radius;
+        const minY = boxMargin + ball.radius;
+        const maxY = height - boxMargin - ball.radius;
+
+        // Move ball
+        ball.x += ball.vx * dt;
+        ball.y += ball.vy * dt;
+
+        // Rotate ball visually proportional to velocity
+        const speed = Math.hypot(ball.vx, ball.vy);
+        ball.angle += (ball.angularVel + speed * 0.012) * dt;
+
+        // Natural gentle friction toward cruise speed so the ball never stops rolling
+        const minCruiseSpeed = Math.min(340, Math.max(230, Math.min(width, height) * 0.58));
+        const maxSpeedCap = 860;
+
+        if (speed > minCruiseSpeed) {
+          const damping = Math.pow(0.72, dt);
+          ball.vx *= damping;
+          ball.vy *= damping;
+        } else if (speed < minCruiseSpeed * 0.85) {
+          const boost = (minCruiseSpeed / Math.max(40, speed));
+          ball.vx *= 1 + (boost - 1) * 0.08;
+          ball.vy *= 1 + (boost - 1) * 0.08;
+        }
+
+        if (speed > maxSpeedCap) {
+          ball.vx = (ball.vx / speed) * maxSpeedCap;
+          ball.vy = (ball.vy / speed) * maxSpeedCap;
+        }
+
+        // Playful cat-prey movement: occasional organic wiggle or dart every few seconds
+        ball.wanderTimer += dt;
+        if (ball.wanderTimer > 2.4) {
+          ball.wanderTimer = 0;
+          const curAngle = Math.atan2(ball.vy, ball.vx);
+          const jitter = (Math.random() - 0.5) * 0.65;
+          const targetSpeed = Math.max(speed, minCruiseSpeed * (0.95 + Math.random() * 0.35));
+          ball.vx = Math.cos(curAngle + jitter) * targetSpeed;
+          ball.vy = Math.sin(curAngle + jitter) * targetSpeed;
+        }
+
+        // Bounce off wooden box walls
+        let hitWall = false;
+        if (ball.x <= minX) {
+          ball.x = minX;
+          ball.vx = Math.abs(ball.vx);
+          // Add slight angle variance so it never gets trapped in a straight line
+          ball.vy += (Math.random() - 0.5) * 60;
+          hitWall = true;
+        } else if (ball.x >= maxX) {
+          ball.x = maxX;
+          ball.vx = -Math.abs(ball.vx);
+          ball.vy += (Math.random() - 0.5) * 60;
+          hitWall = true;
+        }
+
+        if (ball.y <= minY) {
+          ball.y = minY;
+          ball.vy = Math.abs(ball.vy);
+          ball.vx += (Math.random() - 0.5) * 60;
+          hitWall = true;
+        } else if (ball.y >= maxY) {
+          ball.y = maxY;
+          ball.vy = -Math.abs(ball.vy);
+          ball.vx += (Math.random() - 0.5) * 60;
+          hitWall = true;
+        }
+
+        if (hitWall) {
+          ball.hitScale = Math.max(ball.hitScale, 1.12);
+          ball.angularVel = -ball.angularVel * 0.8 + (Math.random() - 0.5) * 6;
+          spawnRipple(ball.x, ball.y, ball.radius * 1.6, 'rgba(251, 191, 36, 0.35)');
+          playWallBounceSound(speed);
+        }
+
+        // Smooth decay of hit scale & flash
+        ball.hitScale += (1 - ball.hitScale) * Math.min(1, dt * 12);
+        ball.hitFlash = Math.max(0, ball.hitFlash - dt * 3.5);
+
+        // Record motion trail
+        trail.push({ x: ball.x, y: ball.y, r: ball.radius * 0.72 });
+        if (trail.length > 10) trail.shift();
+
+        // Update particles
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vx *= 0.94;
+          p.vy *= 0.94;
+          p.life -= dt;
+          p.alpha = Math.max(0, p.life * 2);
+          if (p.life <= 0) particles.splice(i, 1);
+        }
+
+        // Update ripples
+        for (let i = ripples.length - 1; i >= 0; i--) {
+          const r = ripples[i];
+          r.radius += (r.maxRadius - r.radius) * Math.min(1, dt * 9);
+          r.alpha -= dt * 2.1;
+          if (r.alpha <= 0) ripples.splice(i, 1);
+        }
+
+        // Update paw prints
+        for (let i = pawPrints.length - 1; i >= 0; i--) {
+          const fp = pawPrints[i];
+          fp.alpha -= dt * 0.75;
+          if (fp.alpha <= 0) pawPrints.splice(i, 1);
+        }
+      }
+
+      // --- Rendering ---
+      function drawWoodenBox() {
+        // Outer wooden frame background
+        const outerGrad = ctx.createLinearGradient(0, 0, width, height);
+        outerGrad.addColorStop(0, '#5c3a21');
+        outerGrad.addColorStop(0.5, '#472b16');
+        outerGrad.addColorStop(1, '#361f0e');
+        ctx.fillStyle = outerGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        // Inner box recessed floor (warm dark felt/cardboard contrast so bright ball pops for cat eyes)
+        const bx = boxMargin;
+        const by = boxMargin;
+        const bw = width - boxMargin * 2;
+        const bh = height - boxMargin * 2;
+
+        // Box interior gradient
+        const floorGrad = ctx.createRadialGradient(
+          width * 0.5, height * 0.5, Math.min(bw, bh) * 0.1,
+          width * 0.5, height * 0.5, Math.max(bw, bh) * 0.75
+        );
+        floorGrad.addColorStop(0, '#292018');
+        floorGrad.addColorStop(1, '#17110c');
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, 18);
+        ctx.fillStyle = floorGrad;
+        ctx.fill();
+
+        // Subtle cardboard/wood grain texture lines inside the box
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(255, 228, 181, 0.03)';
+        ctx.lineWidth = 2;
+        const step = 36;
+        for (let y = by; y < by + bh; y += step) {
+          ctx.beginPath();
+          ctx.moveTo(bx, y);
+          ctx.lineTo(bx + bw, y);
+          ctx.stroke();
+        }
+
+        // Inner wall shadow for 3D box depth
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.65)';
+        ctx.lineWidth = 12;
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.restore();
+
+        // Crisp inner wooden rim highlight
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, 18);
+        ctx.strokeStyle = '#9a6b43';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Corner brackets of the box
+        const cornerLen = 22;
+        ctx.strokeStyle = '#d97706';
+        ctx.lineWidth = 3;
+        const corners = [
+          [bx + 6, by + 6, 1, 1],
+          [bx + bw - 6, by + 6, -1, 1],
+          [bx + 6, by + bh - 6, 1, -1],
+          [bx + bw - 6, by + bh - 6, -1, -1]
+        ];
+        corners.forEach(([cx, cy, sx, sy]) => {
+          ctx.beginPath();
+          ctx.moveTo(cx, cy + sy * cornerLen);
+          ctx.lineTo(cx, cy);
+          ctx.lineTo(cx + sx * cornerLen, cy);
+          ctx.stroke();
+        });
+      }
+
+      function drawPawPrintIcon(x, y, angle, alpha, isHit) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        ctx.globalAlpha = Math.max(0, alpha);
+        ctx.fillStyle = isHit ? '#facc15' : 'rgba(254, 243, 199, 0.45)';
+
+        // Main pad
+        ctx.beginPath();
+        ctx.ellipse(0, 4, 9, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 4 toes
+        const toes = [
+          [-9, -5, -0.3],
+          [-3, -9, -0.1],
+          [3, -9, 0.1],
+          [9, -5, 0.3]
+        ];
+        toes.forEach(([tx, ty, rot]) => {
+          ctx.save();
+          ctx.translate(tx, ty);
+          ctx.rotate(rot);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 3.3, 4.6, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        });
+
+        ctx.restore();
+      }
+
+      function drawBall() {
+        const style = BALL_STYLES[ballStyleIdx];
+        const r = ball.radius * ball.hitScale;
+
+        // Motion trail
+        for (let i = 0; i < trail.length; i++) {
+          const t = trail[i];
+          const ratio = (i + 1) / trail.length;
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, r * ratio * 0.65, 0, Math.PI * 2);
+          ctx.fillStyle = style.glow;
+          ctx.globalAlpha = ratio * 0.22;
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.save();
+        ctx.translate(ball.x, ball.y);
+
+        // Floor drop shadow under ball
+        ctx.beginPath();
+        ctx.arc(4, 7, r * 0.98, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.48)';
+        ctx.fill();
+
+        // Outer glow for cat visibility
+        ctx.shadowColor = style.glow;
+        ctx.shadowBlur = 22;
+
+        // Base ball sphere
+        const sphereGrad = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.12, 0, 0, r);
+        sphereGrad.addColorStop(0, style.secondary);
+        sphereGrad.addColorStop(0.55, style.primary);
+        sphereGrad.addColorStop(1, '#713f12');
+
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fillStyle = sphereGrad;
+        ctx.fill();
+
+        // Clip inside ball for rotating stripes & jingle bell hole
+        ctx.shadowBlur = 0;
+        ctx.clip();
+
+        ctx.rotate(ball.angle);
+
+        // Curved rolling seam / stripes so rotation is super clear to a cat's motion vision
+        ctx.strokeStyle = style.stripe;
+        ctx.lineWidth = Math.max(3.5, r * 0.13);
+        ctx.lineCap = 'round';
+
+        ctx.beginPath();
+        ctx.arc(-r * 0.55, 0, r * 0.72, -Math.PI * 0.42, Math.PI * 0.42);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(r * 0.55, 0, r * 0.72, Math.PI * 0.58, Math.PI * 1.42);
+        ctx.stroke();
+
+        // Center dark jingle-bell slot dot that orbits as it rolls
+        ctx.fillStyle = 'rgba(28, 20, 13, 0.75)';
+        ctx.beginPath();
+        ctx.arc(r * 0.28, 0, r * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+
+        // White flash overlay on paw tap
+        if (ball.hitFlash > 0) {
+          ctx.fillStyle = `rgba(255, 255, 255, ${ball.hitFlash * 0.65})`;
+          ctx.beginPath();
+          ctx.arc(0, 0, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.restore();
+
+        // Specular gloss highlight on top-left of ball
+        ctx.save();
+        ctx.translate(ball.x, ball.y);
+        ctx.beginPath();
+        ctx.ellipse(-r * 0.32, -r * 0.34, r * 0.26, r * 0.14, -Math.PI / 4, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawScene() {
+        ctx.clearRect(0, 0, width, height);
+        drawWoodenBox();
+
+        // Draw fading paw prints
+        pawPrints.forEach((fp) => {
+          drawPawPrintIcon(fp.x, fp.y, fp.angle, fp.alpha, fp.hit);
+        });
+
+        // Draw expanding ripples
+        ripples.forEach((rp) => {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(rp.x, rp.y, rp.radius, 0, Math.PI * 2);
+          ctx.strokeStyle = rp.color;
+          ctx.globalAlpha = Math.max(0, rp.alpha);
+          ctx.lineWidth = 3.5;
+          ctx.stroke();
+          ctx.restore();
+        });
+
+        // Draw ball
+        drawBall();
+
+        // Draw spark particles
+        particles.forEach((p) => {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, p.alpha);
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        });
+      }
+
+      function gameLoop(timestamp) {
+        if (gameState !== 'playing') return;
+        const dt = Math.min(0.05, Math.max(0.001, (timestamp - lastFrameTime) / 1000));
+        lastFrameTime = timestamp;
+
+        updatePhysics(dt);
+        drawScene();
+
+        animFrameId = requestAnimationFrame(gameLoop);
+      }
+
+      // --- Event Listeners ---
+      // Multi-touch & Pointer support for fast cat paws on iPhone
+      canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (gameState !== 'playing') return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          handlePawTap(t.clientX, t.clientY);
+        }
+      }, { passive: false });
+
+      canvas.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        if (gameState !== 'playing') return;
+        handlePawTap(e.clientX, e.clientY);
+      });
+
+      // Controls
+      startGameBtn.addEventListener('click', () => {
+        startSession();
+      });
+
+      playAgainBtn.addEventListener('click', () => {
+        startSession();
+      });
+
+      quickRestartBtn.addEventListener('click', () => {
+        startSession();
+      });
+
+      ballStyleBtn.addEventListener('click', () => {
+        ballStyleIdx = (ballStyleIdx + 1) % BALL_STYLES.length;
+        const style = BALL_STYLES[ballStyleIdx];
+        ballStyleIcon.textContent = style.icon;
+        ballStyleLabel.textContent = style.name;
+        drawScene();
+      });
+
+      soundModeBtn.addEventListener('click', () => {
+        soundModeIdx = (soundModeIdx + 1) % SOUND_MODES.length;
+        soundModeLabel.textContent = SOUND_MODES[soundModeIdx];
+        playPawHitSound();
+      });
+
+      muteBtn.addEventListener('click', () => {
+        isMuted = !isMuted;
+        muteIcon.textContent = isMuted ? '🔇' : '🔊';
+        muteLabel.textContent = isMuted ? 'Muted' : 'Sound On';
+        if (!isMuted) playPawHitSound();
+      });
+
+      // Keyboard shortcuts for accessibility / desktop testing
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space') {
+          e.preventDefault();
+          if (gameState !== 'playing') {
+            startSession();
+          } else {
+            // Simulate a paw tap right on the ball
+            const rect = canvas.getBoundingClientRect();
+            handlePawTap(rect.left + ball.x, rect.top + ball.y);
+          }
+        } else if (e.key === 'm' || e.key === 'M') {
+          muteBtn.click();
+        } else if (e.key === 'r' || e.key === 'R') {
+          startSession();
+        }
+      });
+
+      window.addEventListener('resize', resizeCanvas);
+
+      window.onload = function () {
+        resizeCanvas();
+        resetBallInCenter();
+        drawScene();
+      };
+    })();
+  </script>
+</body>
+</html>
