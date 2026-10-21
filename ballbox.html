@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fluffybottom">
+<meta name="theme-color" content="#0b1028">
+<title>Lord Fluffybottom vs. The Ball</title>
+<style>
+  :root {
+    --bg: #0b1028; --cream: #f6ecdc; --muted: rgba(246,236,220,.62); --ink: #1b1530;
+    --gold: #ffd447; --coral: #ff8e72; --teal: #5eead4; --lilac: #b9a2ff; --sky: #6ec6ff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--cream);
+    font-family: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none;
+  }
+  body { position: fixed; inset: 0; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #sa { position: fixed; top: 0; left: 0; width: 0; height: 0; visibility: hidden; pointer-events: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+
+  .overlay {
+    position: fixed; inset: 0; z-index: 10; display: flex; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    background: rgba(8,11,30,.42); transition: opacity .35s ease, visibility 0s;
+  }
+  .overlay.blur { background: rgba(8,11,30,.55); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
+  .overlay.hidden { opacity: 0; visibility: hidden; transition: opacity .35s ease, visibility 0s linear .35s; }
+  .card {
+    margin: auto; width: min(100%, 430px); padding: 22px 20px 18px; border-radius: 26px; text-align: center;
+    background: linear-gradient(160deg, rgba(40,48,108,.94), rgba(20,25,62,.96));
+    border: 1px solid rgba(255,255,255,.08);
+    box-shadow: 0 20px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .grad { background: linear-gradient(90deg, var(--gold), var(--coral) 60%, var(--lilac));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .paw { font-size: 30px; line-height: 1; }
+  h1 { margin: 6px 0 8px; font-size: 27px; line-height: 1.15; font-weight: 800; }
+  .sub { margin: 0 0 16px; font-size: 15px; line-height: 1.4; color: var(--muted); }
+  .tip { margin: 12px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+  .btn { -webkit-appearance: none; appearance: none; border: 0; font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+  .btn.primary {
+    position: relative; overflow: hidden; width: 100%; padding: 15px 18px; border-radius: 16px;
+    font-size: 19px; font-weight: 800; color: var(--ink);
+    background: linear-gradient(135deg, var(--gold), var(--coral));
+    box-shadow: 0 8px 24px rgba(255,142,114,.32); transition: transform .1s, filter .3s;
+  }
+  .btn.primary:active { transform: scale(.98); }
+  .btn.primary.locked { pointer-events: none; filter: saturate(.35) brightness(.75); }
+  .btn.primary.locked::after {
+    content: ""; position: absolute; left: 0; bottom: 0; width: 100%; height: 4px; background: rgba(255,255,255,.75);
+    transform-origin: left; animation: arm var(--lock-ms, 2000ms) linear forwards;
+  }
+  @keyframes arm { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .btn.link { margin-top: 2px; padding: 12px; background: none; font-size: 15px; color: var(--muted);
+    text-decoration: underline; text-underline-offset: 3px; }
+
+  .settings { display: grid; gap: 12px; margin-top: 18px; text-align: left; }
+  .row { display: grid; grid-template-columns: 74px 1fr; align-items: center; gap: 10px; }
+  .label { font-size: 14px; font-weight: 700; color: var(--muted); }
+  .seg { display: flex; gap: 3px; padding: 3px; border-radius: 12px; background: rgba(0,0,0,.25); }
+  .seg .btn { flex: 1; padding: 9px 2px; border-radius: 9px; background: transparent; font-size: 14px; font-weight: 700; color: var(--muted); }
+  .seg .btn.on { background: rgba(255,255,255,.13); color: var(--cream); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+  .swatches { display: flex; gap: 11px; padding-left: 3px; }
+  .swatches .btn { width: 32px; height: 32px; border-radius: 50%; box-shadow: inset 0 -4px 8px rgba(0,0,0,.28);
+    outline: 2px solid transparent; outline-offset: 3px; }
+  .swatches .btn.on { outline-color: var(--cream); }
+
+  .eyebrow { margin: 2px 0 0; font-size: 15px; font-weight: 700; color: var(--muted); }
+  .score { display: flex; align-items: baseline; justify-content: center; gap: 8px; }
+  .score .num { display: inline-block; font-size: 84px; font-weight: 900; line-height: 1.05; }
+  .score .unit { font-size: 22px; font-weight: 700; color: var(--muted); }
+  .flavour { margin: 2px 0 8px; font-size: 16px; font-style: italic; }
+  .record { display: inline-block; margin: 0 0 6px; padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 800;
+    color: var(--ink); background: linear-gradient(90deg, var(--teal), var(--sky)); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 14px; }
+  .stat { padding: 10px 4px 8px; border-radius: 14px; background: rgba(0,0,0,.22); }
+  .stat b { display: block; font-size: 22px; font-weight: 800; }
+  .stat span { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .spark { display: flex; align-items: flex-end; gap: 4px; height: 46px; padding: 0 2px; }
+  .spark i { flex: 1; border-radius: 3px 3px 1px 1px; background: linear-gradient(to top, var(--sky), var(--lilac)); }
+  .spark i.zero { background: rgba(255,255,255,.12); }
+  .axis { display: flex; justify-content: space-between; margin: 5px 2px 12px; font-size: 11px; color: var(--muted); }
+  .foot { margin: 0 0 14px; font-size: 12.5px; color: var(--muted); }
+
+  @media (orientation: landscape) and (max-height: 540px) {
+    .start-card { width: min(100%, 780px); display: grid; grid-template-columns: 1fr 1.1fr; gap: 24px; align-items: center; text-align: left; padding: 18px 22px; }
+    .start-card .settings { margin-top: 0; }
+    .start-card .paw { display: none; }
+    h1 { font-size: 24px; }
+    .end-card { width: min(100%, 760px); display: grid; grid-template-columns: .9fr 1.1fr; gap: 22px; align-items: center; padding: 18px 22px; }
+    .score .num { font-size: 72px; }
+    .stats { margin-top: 0; }
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="sa"></div>
+
+<div id="start" class="overlay">
+  <div class="card start-card">
+    <div>
+      <div class="paw">🐾</div>
+      <h1><span class="grad" data-name></span><br>vs. The Ball</h1>
+      <p class="sub">Sessions last <span id="mins"></span> minutes. Tap Start, then set the phone down in front of His Lordship.</p>
+      <button id="startBtn" class="btn primary">Start</button>
+      <p class="tip">Tip: Guided Access (triple-click the side button) stops paws swiping out of the game.</p>
+    </div>
+    <div class="settings">
+      <div class="row"><span class="label">Ball size</span>
+        <div class="seg" data-key="size"><button class="btn" data-value="s">Small</button><button class="btn" data-value="m">Medium</button><button class="btn" data-value="l">Large</button></div>
+      </div>
+      <div class="row"><span class="label">Speed</span>
+        <div class="seg" data-key="speed"><button class="btn" data-value="chill">Chill</button><button class="btn" data-value="normal">Normal</button><button class="btn" data-value="zoomy">Zoomy</button></div>
+      </div>
+      <div class="row"><span class="label">Colour</span><div class="swatches" data-key="colour"></div></div>
+      <div class="row"><span class="label">Volume</span>
+        <div class="seg" data-key="volume"><button class="btn" data-value="off">Off</button><button class="btn" data-value="low">Low</button><button class="btn" data-value="med">Med</button><button class="btn" data-value="high">High</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="end" class="overlay blur hidden">
+  <div class="card end-card">
+    <div>
+      <p class="eyebrow"><span data-name></span> scored</p>
+      <div class="score"><span id="scoreNum" class="num grad">0</span><span class="unit">hits</span></div>
+      <p id="flavour" class="flavour"></p>
+      <p id="record" class="record" hidden>New personal best!</p>
+    </div>
+    <div>
+      <div class="stats">
+        <div class="stat"><b id="statAcc">–</b><span>accuracy</span></div>
+        <div class="stat"><b id="statStreak">–</b><span>best streak</span></div>
+        <div class="stat"><b id="statSwats">–</b><span>swats</span></div>
+      </div>
+      <div id="spark" class="spark"></div>
+      <div class="axis"><span>0:00</span><span>hits over time</span><span id="axisEnd"></span></div>
+      <p id="lifetime" class="foot"></p>
+      <button id="againBtn" class="btn primary">Play again</button>
+      <button id="settingsBtn" class="btn link">Settings</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ======================= CONFIG: tweak freely ======================= */
+const CAT_NAME = 'Lord Fluffybottom';
+const GAME_SECONDS = 180;
+const AGAIN_LOCK_MS = 2000;   // "Play again" arms after this, so a paw still swatting at 0:00 can't restart
+const BUCKETS = 12;           // bars in the "hits over time" chart
+const SIZES   = { s: 24, m: 33, l: 44 };                        // ball radius, CSS px (phone)
+const SPEEDS  = { chill: 0.7, normal: 1, zoomy: 1.35 };
+const VOLUMES = { off: 0, low: 0.35, med: 0.65, high: 1 };
+const COLOURS = { sun: '#ffd447', sky: '#6ec6ff', moon: '#f3eee4', lilac: '#b9a2ff', coral: '#ff8e72' };
+const BASE = { cruise: 150, dart: 520, hit: 640, max: 1500 };   // px/s at Normal on a phone-sized box
+const PAW_R = 20;             // rough radius of a paw touch, px
+const TAP_SLOP = 12;          // extra forgiveness on taps, px
+const LAG_MS = 90;            // taps also count against where the ball was this recently (screen latency)
+const SWAT_GROUP_MS = 120;    // touches this close together = one swat (multi-pad paws)
+const HIT_COOLDOWN_MS = 110;
+const KEY_SETTINGS = 'fluffy.settings.v1', KEY_STATS = 'fluffy.stats.v1';
+/* ==================================================================== */
+
+const FONT = 'ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif';
+const TAU = Math.PI * 2;
+const $ = s => document.querySelector(s);
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const pick = arr => arr[(Math.random() * arr.length) | 0];
+const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const WHITE = [255, 255, 255], BLACK = [0, 0, 0], GOLD = hexRgb('#ffd447'), CORAL = hexRgb('#ff8e72');
+
+/* ---------- saved settings & lifetime stats ---------- */
+function load(key, defaults) {
+  try { return Object.assign({}, defaults, JSON.parse(localStorage.getItem(key))); }
+  catch (e) { return Object.assign({}, defaults); }
+}
+function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} }
+const settings = load(KEY_SETTINGS, { size: 'm', speed: 'normal', colour: 'sun', volume: 'med' });
+if (!(settings.size in SIZES)) settings.size = 'm';
+if (!(settings.speed in SPEEDS)) settings.speed = 'normal';
+if (!(settings.colour in COLOURS)) settings.colour = 'sun';
+if (!(settings.volume in VOLUMES)) settings.volume = 'med';
+const lifetime = load(KEY_STATS, { games: 0, bestHits: 0, bestStreak: 0, totalHits: 0 });
+
+/* ---------- sound: everything synthesised with Web Audio, no files ---------- */
+const Sound = (() => {
+  let ac = null, master = null, wet = null, noise = null, vol = 0.65, lastBonk = 0;
+  const running = () => !!ac && ac.state === 'running';
+
+  function resume() {
+    if (!ac || ac.state === 'running') return;
+    try { const p = ac.resume(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+  }
+  function init() {
+    if (!ac) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      // newer iOS: lets sound play even with the silent switch on
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+      ac = new AC();
+      const comp = ac.createDynamicsCompressor();
+      comp.threshold.value = -16; comp.knee.value = 10; comp.ratio.value = 4;
+      comp.attack.value = 0.003; comp.release.value = 0.2;
+      comp.connect(ac.destination);
+      master = ac.createGain(); master.gain.value = vol * vol; master.connect(comp);
+      // small, soft room reverb from decaying noise
+      const verb = ac.createConvolver(), len = Math.floor(ac.sampleRate * 1.1);
+      const ir = ac.createBuffer(2, len, ac.sampleRate);
+      for (let c = 0; c < 2; c++) {
+        const d = ir.getChannelData(c);
+        for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+      }
+      verb.buffer = ir;
+      wet = ac.createGain(); wet.gain.value = 0.16; wet.connect(verb); verb.connect(master);
+      noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+      const nd = noise.getChannelData(0);
+      for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+      // silent blip inside the tap handler unlocks audio on iOS
+      const s = ac.createBufferSource(); s.buffer = ac.createBuffer(1, 1, ac.sampleRate);
+      s.connect(ac.destination); s.start(0);
+    }
+    resume();
+  }
+  function env(g, t, peak, attack, release) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + release);
+  }
+  function out(node, send) {
+    node.connect(master);
+    if (send) { const s = ac.createGain(); s.gain.value = send; node.connect(s); s.connect(wet); }
+  }
+  function tone(f, t, dur, type, peak) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    env(g, t, peak, 0.012, dur);
+    o.connect(g); out(g, 1); o.start(t); o.stop(t + dur + 0.05);
+  }
+
+  // hit: short rising chirp (~420 Hz to 1.5 kHz) that climbs a pentatonic scale as the streak grows
+  const PENTA = [0, 2, 4, 7, 9, 12];
+  function chirp(streak) {
+    if (!running()) return;
+    const t = ac.currentTime + 0.005, cyc = PENTA.length * 2 - 2;
+    let i = (Math.max(1, streak) - 1) % cyc;
+    if (i >= PENTA.length) i = cyc - i;
+    const f = 523.25 * Math.pow(2, PENTA[i] / 12) * rand(0.985, 1.015);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(f * 0.8, t);
+    o.frequency.exponentialRampToValueAtTime(f * 1.4, t + 0.06);
+    o.frequency.exponentialRampToValueAtTime(f * 1.22, t + 0.14);
+    env(g, t, 0.34, 0.008, 0.16);
+    const o2 = ac.createOscillator(), g2 = ac.createGain();   // faint octave shimmer, quieter on high notes
+    o2.type = 'sine';
+    o2.frequency.setValueAtTime(f * 1.6, t);
+    o2.frequency.exponentialRampToValueAtTime(f * 2.8, t + 0.06);
+    o2.frequency.exponentialRampToValueAtTime(f * 2.44, t + 0.14);
+    env(g2, t, 0.05 * Math.min(1, 600 / f), 0.008, 0.1);
+    o.connect(g); o2.connect(g2); out(g, 0.8); out(g2, 0.8);
+    o.start(t); o2.start(t); o.stop(t + 0.22); o2.stop(t + 0.16);
+  }
+  function sparkle() {   // every 5-hit streak
+    if (!running()) return;
+    const t = ac.currentTime + 0.1;
+    tone(783.99, t, 0.22, 'triangle', 0.12);
+    tone(1046.5, t + 0.08, 0.3, 'triangle', 0.12);
+  }
+  // walls: soft rubbery bonk with a pitch drop, pitched so a phone speaker can actually play it
+  function bonk(intensity, pitch = 1) {
+    if (!running()) return;
+    const now = ac.currentTime;
+    if (now - lastBonk < 0.035) return;
+    lastBonk = now;
+    const t = now + 0.003, k = clamp(intensity, 0.08, 1), f = 340 * pitch * rand(0.94, 1.06);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f * 1.5, t);
+    o.frequency.exponentialRampToValueAtTime(f, t + 0.025);
+    o.frequency.exponentialRampToValueAtTime(f * 0.72, t + 0.16);
+    env(g, t, 0.5 * k, 0.004, 0.19);
+    const o2 = ac.createOscillator(), g2 = ac.createGain();   // woody knock
+    o2.type = 'triangle'; o2.frequency.setValueAtTime(f * 2.7, t);
+    env(g2, t, 0.13 * k, 0.002, 0.06);
+    const n = ac.createBufferSource(), bp = ac.createBiquadFilter(), g3 = ac.createGain();   // contact tick
+    n.buffer = noise; bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = 1.2;
+    env(g3, t, 0.1 * k, 0.001, 0.025);
+    o.connect(g); o2.connect(g2); n.connect(bp); bp.connect(g3);
+    out(g, 0.5); out(g2, 0.5); out(g3, 0);
+    o.start(t); o2.start(t); n.start(t, Math.random() * 0.8, 0.05);
+    o.stop(t + 0.24); o2.stop(t + 0.1);
+  }
+  function rustle() {   // dart after a pause: quiet three-tick skitter
+    if (!running()) return;
+    const t = ac.currentTime + 0.003;
+    const n = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+    n.buffer = noise; bp.type = 'bandpass'; bp.frequency.value = 1300; bp.Q.value = 0.8;
+    g.gain.setValueAtTime(0.0001, t);
+    for (let i = 0; i < 3; i++) {
+      const ti = t + i * 0.05;
+      g.gain.exponentialRampToValueAtTime(0.15 * (1 - i * 0.2), ti + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, ti + 0.045);
+    }
+    n.connect(bp); bp.connect(g); out(g, 0.3);
+    n.start(t, Math.random() * 0.7, 0.2);
+  }
+  function startJingle() {
+    if (!ac) return;
+    const t = ac.currentTime + 0.05;
+    [523.25, 659.25, 783.99].forEach((f, i) => tone(f, t + i * 0.09, 0.3, 'triangle', 0.16));
+  }
+  function endJingle() {
+    if (!running()) return;
+    const t = ac.currentTime + 0.03;
+    [392, 523.25, 659.25, 783.99].forEach((f, i) => tone(f, t + i * 0.1, 0.32, 'triangle', 0.16));
+    [523.25, 659.25, 783.99, 1046.5].forEach(f => tone(f, t + 0.45, 0.9, 'sine', 0.07));
+  }
+  function setVolume(v) { vol = v; if (master) master.gain.setTargetAtTime(v * v, ac.currentTime, 0.03); }
+  return { init, resume, chirp, sparkle, bonk, rustle, startJingle, endJingle, setVolume };
+})();
+
+/* ---------- state ---------- */
+const canvas = $('#game'), ctx = canvas.getContext('2d');
+const bg = document.createElement('canvas'), bgx = bg.getContext('2d');
+const startEl = $('#start'), endEl = $('#end');
+const layout = { W: 0, H: 0, dpr: 1, hudY: 0, f: 1 };
+const box = { x: 0, y: 0, w: 0, h: 0, r: 22 };
+const game = { state: 'start', timeLeft: GAME_SECONDS, hits: 0, swats: 0, hitSwats: 0, streak: 0, bestStreak: 0, buckets: [] };
+const ball = {
+  x: 0, y: 0, vx: 0, vy: 0, r: 33, z: 0, vz: 0,
+  mode: 'cruise', modeT: 3, cruise: BASE.cruise, turn: 0, turnTarget: 0, turnT: 0, twitchT: 0,
+  squash: 0, squashAng: 0, pal: null, hist: [],
+  spots: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]   // unit vectors on the sphere
+};
+const pointers = new Map();
+let speedK = 1, clock = 0, swat = null, lastHitAt = -1e9;
+
+// rotate the surface spots about an axis (Rodrigues' formula): this is what makes the ball look like it rolls
+function rotateSpots(ax, ay, az, ang) {
+  const L = Math.hypot(ax, ay, az);
+  if (L < 1e-9 || !ang) return;
+  ax /= L; ay /= L; az /= L;
+  const c = Math.cos(ang), s = Math.sin(ang), C = 1 - c;
+  for (const p of ball.spots) {
+    const x = p[0], y = p[1], z = p[2], d = ax * x + ay * y + az * z;
+    p[0] = x * c + (ay * z - az * y) * s + ax * d * C;
+    p[1] = y * c + (az * x - ax * z) * s + ay * d * C;
+    p[2] = z * c + (ax * y - ay * x) * s + az * d * C;
+  }
+}
+rotateSpots(Math.random(), Math.random(), Math.random(), rand(0, TAU));
+
+function applySettings(persist) {
+  const c = hexRgb(COLOURS[settings.colour]);
+  ball.pal = { base: c, light: mix(c, WHITE, 0.6), dark: mix(c, BLACK, 0.35), spot: mix(c, BLACK, 0.5) };
+  ball.r = SIZES[settings.size] * clamp(layout.f, 1, 1.5);
+  speedK = SPEEDS[settings.speed] * layout.f;
+  ball.cruise = BASE.cruise * speedK;
+  Sound.setVolume(VOLUMES[settings.volume]);
+  document.querySelectorAll('[data-key]').forEach(g =>
+    g.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.value === settings[g.dataset.key])));
+  if (persist) save(KEY_SETTINGS, settings);
+}
+
+/* ---------- layout: box inset from notch, Dynamic Island and home indicator ---------- */
+function readSafeArea() {
+  const cs = getComputedStyle($('#sa'));
+  return { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0,
+           b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
+}
+function resize() {
+  const W = window.innerWidth, H = window.innerHeight, dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const u = box.w ? (ball.x - box.x) / box.w : 0.5, v = box.h ? (ball.y - box.y) / box.h : 0.5;
+  Object.assign(layout, { W, H, dpr });
+  canvas.width = bg.width = Math.round(W * dpr);
+  canvas.height = bg.height = Math.round(H * dpr);
+  const sa = readSafeArea(), m = 12, hud = 34;
+  box.x = sa.l + m; box.w = Math.max(120, W - sa.r - m - box.x);
+  box.y = sa.t + 6 + hud; box.h = Math.max(120, H - sa.b - m - box.y);
+  layout.hudY = sa.t + 6 + hud / 2 - 1;
+  layout.f = clamp(Math.min(box.w, box.h) / 360, 0.85, 2);
+  applySettings(false);
+  ball.x = clamp(box.x + u * box.w, box.x + ball.r, box.x + box.w - ball.r);
+  ball.y = clamp(box.y + v * box.h, box.y + ball.r, box.y + box.h - ball.r);
+  ball.hist.length = 0;
+  drawBackground();
+}
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+function glow(g, x, y, r, c, a) {
+  const gr = g.createRadialGradient(x, y, 0, x, y, r);
+  gr.addColorStop(0, rgba(c, a)); gr.addColorStop(1, rgba(c, 0));
+  g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+}
+// static scenery is drawn once per resize to an offscreen canvas, then blitted each frame
+function drawBackground() {
+  const g = bgx, { W, H, dpr } = layout, { x, y, w, h, r } = box;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const page = g.createLinearGradient(0, 0, W, H);
+  page.addColorStop(0, '#0e1334'); page.addColorStop(1, '#091224');
+  g.fillStyle = page; g.fillRect(0, 0, W, H);
+  const cx = x + w / 2, cy = y + h / 2;
+  const floor = g.createRadialGradient(cx, cy - h * 0.1, 0, cx, cy, Math.hypot(w, h) * 0.6);
+  floor.addColorStop(0, '#232e66'); floor.addColorStop(0.55, '#1a235b'); floor.addColorStop(1, '#111842');
+  roundRect(g, x, y, w, h, r); g.fillStyle = floor; g.fill();
+  g.save(); roundRect(g, x, y, w, h, r); g.clip();
+  const big = Math.max(w, h);
+  glow(g, x, y, big * 0.55, hexRgb('#b9a2ff'), 0.10);
+  glow(g, x + w, y + h, big * 0.6, CORAL, 0.07);
+  glow(g, x + w, y, big * 0.4, hexRgb('#5eead4'), 0.05);
+  g.fillStyle = 'rgba(255,255,255,0.035)'; g.beginPath();
+  for (let py = y + 11; py < y + h; py += 22)
+    for (let px = x + 11; px < x + w; px += 22) { g.moveTo(px + 1.1, py); g.arc(px, py, 1.1, 0, TAU); }
+  g.fill();
+  g.lineWidth = 18; g.strokeStyle = 'rgba(0,0,0,0.18)'; roundRect(g, x, y, w, h, r); g.stroke();   // inner edge shade
+  g.restore();
+  g.save();
+  g.shadowColor = 'rgba(94,234,212,0.45)'; g.shadowBlur = 16 * dpr;
+  g.lineWidth = 2.5; g.strokeStyle = 'rgba(94,234,212,0.6)'; roundRect(g, x, y, w, h, r); g.stroke();
+  g.restore();
+}
+
+/* ---- PART 1 ENDS HERE: paste Part 2 directly below this line ---- */
+ /* ============================ PART 2 ============================ */
+const STARTLE = 1.8;   // a paw landing within this × the hit zone (but missing) makes the ball flee; 0 = off
+const SPARK_COLS = ['#ffd447', '#ff8e72', '#5eead4', '#b9a2ff', '#6ec6ff', '#f6ecdc'].map(hexRgb);
+const BONK_PITCH = { s: 1.18, m: 1, l: 0.86 };   // smaller ball, higher bonk
+const DEBUG = new URLSearchParams(location.search).has('debug');   // add ?debug to the URL to see hit zones
+const fx = { parts: [], ripples: [], floats: [] };
+const againBtn = $('#againBtn'), settingsBtn = $('#settingsBtn');
+let last = 0, wakeLock = null, lockTimer = 0;
+
+const ballY = () => ball.y - ball.z * 0.55;   // drawn position: the ball lifts a little during a hop
+
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+  const t = L ? clamp(((px - ax) * dx + (py - ay) * dy) / L, 0, 1) : 0;
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+}
+function ballAt(t) {
+  const h = ball.hist;
+  for (let i = h.length - 1; i >= 0; i--) if (h[i].t <= t) return h[i];
+  return h[0] || { x: ball.x, y: ballY() };
+}
+// distance from a touch to the path the ball covered in the last LAG_MS (forgives screen latency)
+function ballPathDist(px, py, now) {
+  const old = ballAt(now - LAG_MS / 1000);
+  return distToSegment(px, py, old.x, old.y, ball.x, ballY());
+}
+
+/* ---------- ball behaviour: cruise, pause, dart, plus swats ---------- */
+function dart(silent) {
+  const b = ball;
+  let a = rand(0, TAU);
+  const edge = Math.min(b.x - box.x, box.x + box.w - b.x, b.y - box.y, box.y + box.h - b.y);
+  if (edge < b.r * 3) a = Math.atan2(box.y + box.h / 2 - b.y, box.x + box.w / 2 - b.x) + rand(-1, 1);   // near a wall: dart into open space
+  const sp = BASE.dart * speedK * rand(0.8, 1.15);
+  b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
+  b.mode = 'dart'; b.modeT = 0;
+  if (!silent && game.state === 'play') Sound.rustle();
+}
+function startle(px, py) {
+  const b = ball;
+  if (b.mode === 'hit' || Math.hypot(b.vx, b.vy) > b.cruise * 2) return;
+  const a = Math.atan2(ballY() - py, b.x - px) + rand(-0.6, 0.6), sp = BASE.dart * speedK * rand(0.6, 0.85);
+  b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
+  b.mode = 'dart'; b.modeT = 0;
+  if (game.state === 'play') Sound.rustle();
+}
+function collideWalls() {
+  const b = ball, minX = box.x + b.r, maxX = box.x + box.w - b.r, minY = box.y + b.r, maxY = box.y + box.h - b.r;
+  let hl = false, hr = false, ht = false, hb = false, vn = 0, axis = 0;
+  if (b.x < minX) { b.x = minX; if (b.vx < 0) { hl = true; vn = -b.vx; } }
+  else if (b.x > maxX) { b.x = maxX; if (b.vx > 0) { hr = true; vn = b.vx; } }
+  if (b.y < minY) { b.y = minY; if (b.vy < 0) { ht = true; if (-b.vy > vn) { vn = -b.vy; axis = Math.PI / 2; } } }
+  else if (b.y > maxY) { b.y = maxY; if (b.vy > 0) { hb = true; if (b.vy > vn) { vn = b.vy; axis = Math.PI / 2; } } }
+  if (!(hl || hr || ht || hb)) return;
+  // reflect, lose a little energy, and nudge the angle so the path never settles into a loop
+  const sp = Math.hypot(b.vx, b.vy) * 0.92;
+  const a = Math.atan2(ht || hb ? -b.vy : b.vy, hl || hr ? -b.vx : b.vx) + rand(-0.15, 0.15);
+  b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
+  if (hl) b.vx = Math.abs(b.vx); else if (hr) b.vx = -Math.abs(b.vx);
+  if (ht) b.vy = Math.abs(b.vy); else if (hb) b.vy = -Math.abs(b.vy);
+  if (vn > 25 * speedK) {
+    const k = vn / (BASE.hit * speedK);
+    b.squash = Math.max(b.squash, clamp(k * 0.3, 0.04, 0.3)); b.squashAng = axis;
+    if (game.state === 'play') Sound.bonk(k, BONK_PITCH[settings.size]);
+  }
+}
+function updateBall(dt) {
+  const b = ball;
+  let sp = Math.hypot(b.vx, b.vy), ang = Math.atan2(b.vy, b.vx);
+  const redart = () => { dart(); sp = Math.hypot(b.vx, b.vy); ang = Math.atan2(b.vy, b.vx); };
+  b.modeT -= dt;
+  if (b.mode === 'cruise') {            // wander on gentle curves with the odd twitch
+    sp += (b.cruise - sp) * Math.min(1, dt * 1.5);
+    if ((b.turnT -= dt) <= 0) { b.turnTarget = Math.random() < 0.3 ? 0 : rand(-1.4, 1.4); b.turnT = rand(0.6, 2); }
+    b.turn += (b.turnTarget - b.turn) * Math.min(1, dt * 2);
+    ang += b.turn * dt;
+    if ((b.twitchT -= dt) <= 0) { ang += rand(-0.7, 0.7); b.twitchT = rand(1.2, 3.5); }
+    if (b.modeT <= 0) {
+      const r = Math.random();
+      if (r < 0.45) { b.mode = 'pause'; b.modeT = rand(0.5, 1.6); b.twitchT = rand(0.25, 0.5); }
+      else if (r < 0.7) redart();
+      else b.modeT = rand(1.5, 4);
+    }
+  } else if (b.mode === 'pause') {      // stop dead, twitch a couple of times, then bolt
+    sp *= Math.exp(-dt * 7);
+    if ((b.twitchT -= dt) <= 0) { ang += rand(-1.2, 1.2); sp = Math.max(sp, 45 * speedK); b.twitchT = rand(0.3, 0.8); }
+    if (b.modeT <= 0) redart();
+  } else if (b.mode === 'rest') {       // game over: roll to a stop
+    sp *= Math.exp(-dt * 2.5);
+  } else {                              // 'dart' or 'hit': fast, easing back to a cruise
+    sp = b.cruise + (sp - b.cruise) * Math.exp(-dt * (b.mode === 'hit' ? 1.4 : 1.9));
+    if (sp < b.cruise * 1.08) { b.mode = 'cruise'; b.modeT = rand(2, 5); }
+  }
+  sp = Math.min(sp, BASE.max * speedK);
+  b.vx = Math.cos(ang) * sp; b.vy = Math.sin(ang) * sp;
+
+  const steps = clamp(Math.ceil((sp * dt) / (b.r * 0.5)), 1, 4), sdt = dt / steps;
+  for (let i = 0; i < steps; i++) { b.x += b.vx * sdt; b.y += b.vy * sdt; collideWalls(); }
+  rotateSpots(-b.vy, b.vx, 0, (Math.hypot(b.vx, b.vy) * dt) / b.r);   // roll without slipping
+
+  if (b.z > 0 || b.vz > 0) {            // little hop after a swat
+    b.vz -= 2600 * layout.f * dt; b.z += b.vz * dt;
+    if (b.z <= 0) { b.z = 0; b.vz = b.vz < -80 * layout.f ? -b.vz * 0.3 : 0; }
+  }
+  b.squash *= Math.exp(-dt * 14);
+  while (b.hist.length && (b.hist[0].t < clock - 0.25 || b.hist.length > 40)) b.hist.shift();
+  b.hist.push({ x: b.x, y: ballY(), t: clock });
+}
+// a paw held on the glass is a bumper: the ball bounces off it (no score)
+function updatePaws(dt) {
+  if (game.state !== 'play') return;
+  const decay = Math.exp(-dt * 10), min = ball.r + PAW_R;
+  for (const p of pointers.values()) {
+    p.vx *= decay; p.vy *= decay;
+    if (clock - p.hitAt < 0.3) continue;   // this paw just swatted it: let it fly
+    const dx = ball.x - p.x, dy = ballY() - p.y, d = Math.hypot(dx, dy);
+    if (d >= min || d < 0.01) continue;
+    const nx = dx / d, ny = dy / d, push = Math.min(min - d, 900 * layout.f * dt);
+    ball.x += nx * push; ball.y += ny * push;
+    const vn = ball.vx * nx + ball.vy * ny;
+    if (vn < 0) {
+      ball.vx -= 1.8 * vn * nx; ball.vy -= 1.8 * vn * ny;
+      if (-vn > 30 * speedK) {
+        const k = clamp(-vn / (BASE.hit * speedK), 0.08, 0.6);
+        Sound.bonk(k, 0.8);
+        ball.squash = Math.max(ball.squash, k * 0.3); ball.squashAng = Math.atan2(ny, nx);
+      }
+    }
+    collideWalls();
+  }
+}
+
+/* ---------- paws ---------- */
+function hitBall(p, now) {
+  if (now - lastHitAt < HIT_COOLDOWN_MS / 1000) return false;
+  lastHitAt = now; p.hit = true; p.hitAt = now;
+  const by = ballY();
+  let dx = ball.x - p.x, dy = by - p.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 4) { const a = rand(0, TAU); dx = Math.cos(a); dy = Math.sin(a); }
+  else { dx /= d; dy /= d; }
+  const ps = Math.hypot(p.vx, p.vy);
+  if (ps > 80) {   // a swipe steers the ball along the swipe
+    const w = Math.min(1, ps / 900) * 1.5;
+    dx += (p.vx / ps) * w; dy += (p.vy / ps) * w;
+  }
+  const a = Math.atan2(dy, dx) + rand(-0.3, 0.3);
+  const sp = Math.min(BASE.max * speedK, BASE.hit * speedK * rand(0.9, 1.15) + ps * 0.35);
+  ball.vx = Math.cos(a) * sp; ball.vy = Math.sin(a) * sp;
+  ball.mode = 'hit'; ball.modeT = 0;
+  ball.vz = Math.max(ball.vz, 260 * layout.f);
+  ball.squash = 0.3; ball.squashAng = a;
+  burst(ball.x, by, 16, 260 * layout.f);
+
+  if (p.swat.hit) { Sound.bonk(0.5); return true; }   // another pad of a swat that already scored
+  p.swat.hit = true;
+  game.hits++; game.hitSwats++;
+  game.streak++; game.bestStreak = Math.max(game.bestStreak, game.streak);
+  game.buckets[clamp(Math.floor(((GAME_SECONDS - game.timeLeft) / GAME_SECONDS) * BUCKETS), 0, BUCKETS - 1)]++;
+  Sound.chirp(game.streak);
+  floater('+1', ball.x, by - ball.r - 10, rgba(ball.pal.light), 22);
+  if (game.streak % 5 === 0) {
+    Sound.sparkle();
+    floater(`${game.streak} in a row!`, box.x + box.w / 2, box.y + box.h * 0.2, rgba(GOLD), 26);
+    burst(ball.x, by, 14, 380 * layout.f);
+  }
+  return true;
+}
+function onDown(e) {
+  e.preventDefault();
+  Sound.resume();
+  if (game.state !== 'play') return;
+  const now = performance.now() / 1000;
+  if (!swat || now - swat.t > SWAT_GROUP_MS / 1000) {
+    if (swat && !swat.hit) game.streak = 0;   // the previous swat missed
+    swat = { t: now, hit: false };
+    game.swats++;
+  }
+  const p = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, st: now, vx: 0, vy: 0, hit: false, hitAt: -1e9, swat };
+  pointers.set(e.pointerId, p);
+  const hitR = ball.r + PAW_R + TAP_SLOP, d = ballPathDist(p.x, p.y, now);
+  const hit = d < hitR && hitBall(p, now);
+  if (!hit && d < hitR * STARTLE) startle(p.x, p.y);
+  ripple(p.x, p.y, hit);
+}
+function onMove(e) {
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  const now = performance.now() / 1000, x = e.clientX, y = e.clientY, dt = now - p.st;
+  if (dt > 0.008) {   // smoothed paw velocity, used to steer swipes
+    p.vx = p.vx * 0.35 + ((x - p.sx) / dt) * 0.65;
+    p.vy = p.vy * 0.35 + ((y - p.sy) / dt) * 0.65;
+    p.sx = x; p.sy = y; p.st = now;
+  }
+  const ox = p.x, oy = p.y;
+  p.x = x; p.y = y;
+  // a moving paw that sweeps into the ball is a swipe hit; a slow or resting one is just a bumper
+  if (game.state === 'play' && !p.hit && Math.hypot(p.vx, p.vy) > 120 &&
+      distToSegment(ball.x, ballY(), ox, oy, x, y) < ball.r + PAW_R && hitBall(p, now)) ripple(x, y, true);
+}
+function onUp(e) { pointers.delete(e.pointerId); }
+
+/* ---------- effects ---------- */
+function burst(x, y, n, speed) {
+  const s = clamp(layout.f, 1, 1.4);
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, TAU), v = speed * rand(0.35, 1), max = rand(0.45, 0.85);
+    fx.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: max, max,
+      size: rand(3, 6.5) * s, col: pick(SPARK_COLS), rot: rand(0, TAU), spin: rand(-6, 6) });
+  }
+  if (fx.parts.length > 240) fx.parts.splice(0, fx.parts.length - 240);
+}
+function ripple(x, y, hit) { fx.ripples.push({ x, y, hit, t: 0, dur: hit ? 0.5 : 0.4 }); }
+function floater(text, x, y, col, size) {
+  fx.floats.push({ text, col, size, t: 0, dur: 0.9,
+    x: clamp(x, box.x + 50, box.x + box.w - 50), y: clamp(y, box.y + 30, box.y + box.h - 10) });
+}
+function updateFx(dt) {
+  const drag = Math.exp(-dt * 3.2);
+  for (let i = fx.parts.length - 1; i >= 0; i--) {
+    const q = fx.parts[i];
+    if ((q.life -= dt) <= 0) { fx.parts.splice(i, 1); continue; }
+    q.vx *= drag; q.vy *= drag;
+    q.x += q.vx * dt; q.y += q.vy * dt; q.rot += q.spin * dt;
+  }
+  for (const list of [fx.ripples, fx.floats])
+    for (let i = list.length - 1; i >= 0; i--) if ((list[i].t += dt) >= list[i].dur) list.splice(i, 1);
+}
+
+/* ---------- drawing ---------- */
+function drawRipples() {
+  for (const q of fx.ripples) {
+    const k = q.t / q.dur;
+    ctx.globalAlpha = (1 - k) * (q.hit ? 0.8 : 0.35);
+    ctx.strokeStyle = q.hit ? rgba(ball.pal.light) : '#f6ecdc';
+    ctx.lineWidth = 1 + 3 * (1 - k);
+    ctx.beginPath(); ctx.arc(q.x, q.y, 8 + k * (q.hit ? 48 : 30) * layout.f, 0, TAU); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+function drawTrail() {
+  const b = ball, h = b.hist, n = h.length;
+  const k = clamp((Math.hypot(b.vx, b.vy) - b.cruise * 1.6) / (b.cruise * 2.5), 0, 1);
+  if (k <= 0 || n < 4) return;
+  ctx.fillStyle = rgba(b.pal.base);
+  const m = Math.min(n - 1, 10);
+  for (let j = m; j >= 1; j--) {
+    const q = h[n - 1 - j], f = 1 - j / (m + 1);
+    ctx.globalAlpha = 0.22 * k * f;
+    ctx.beginPath(); ctx.arc(q.x, q.y, b.r * (0.45 + 0.45 * f), 0, TAU); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function drawBall() {
+  const b = ball, r = b.r, P = b.pal, lift = b.z;
+  // shadow stays on the floor while the ball hops
+  const s = clamp(1 - lift / (r * 3), 0.4, 1);
+  ctx.globalAlpha = 0.4 * s;
+  ctx.fillStyle = '#04071a';
+  ctx.beginPath();
+  ctx.ellipse(b.x + r * 0.14 + lift * 0.15, b.y + r * 0.3 + lift * 0.3, r * (0.7 + 0.25 * s), r * (0.45 + 0.17 * s), 0, 0, TAU);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.save();
+  ctx.translate(b.x, ballY());
+  if (b.squash > 0.003) { ctx.rotate(b.squashAng); ctx.scale(1 - b.squash, 1 + b.squash * 0.55); ctx.rotate(-b.squashAng); }
+  const sc = 1 + lift / (r * 10);
+  ctx.scale(sc, sc);
+  const body = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.08, 0, 0, r);
+  body.addColorStop(0, rgba(P.light)); body.addColorStop(0.5, rgba(P.base)); body.addColorStop(1, rgba(P.dark));
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU);
+  ctx.fillStyle = body; ctx.fill();
+  // rolling spots: only those facing us are drawn, foreshortened toward the edge
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = rgba(P.spot);
+  for (const p of b.spots) {
+    if (p[2] < 0.03) continue;
+    ctx.globalAlpha = 0.8 * Math.min(1, p[2] * 2.5);
+    ctx.beginPath();
+    ctx.ellipse(p[0] * r, p[1] * r, r * 0.3 * p[2], r * 0.3, Math.atan2(p[1], p[0]), 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+  // rim shading and a glossy highlight (light fixed at top-left)
+  const rim = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.3, 0, 0, r);
+  rim.addColorStop(0, 'rgba(0,0,0,0)'); rim.addColorStop(1, 'rgba(0,0,0,0.25)');
+  ctx.fillStyle = rim; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.beginPath(); ctx.ellipse(-r * 0.36, -r * 0.42, r * 0.22, r * 0.13, -0.6, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+function drawSparks() {
+  for (const q of fx.parts) {
+    const k = q.life / q.max, s = q.size * (0.4 + 0.6 * k);
+    ctx.globalAlpha = Math.min(1, k * 1.6);
+    ctx.fillStyle = rgba(q.col);
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {   // four-point sparkle
+      const rr = i % 2 ? s * 0.38 : s, a = q.rot + (i * Math.PI) / 4;
+      ctx.lineTo(q.x + Math.cos(a) * rr, q.y + Math.sin(a) * rr);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const f of fx.floats) {
+    const k = f.t / f.dur;
+    ctx.globalAlpha = k < 0.65 ? 1 : 1 - (k - 0.65) / 0.35;
+    ctx.font = `800 ${f.size}px ${FONT}`;
+    ctx.fillStyle = f.col;
+    ctx.fillText(f.text, f.x, f.y - k * 36);
+  }
+  ctx.globalAlpha = 1;
+}
+function drawHud() {
+  const t = Math.max(0, game.timeLeft);
+  ctx.font = `700 15px ${FONT}`;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f6ecdc';
+  ctx.globalAlpha = 0.5;
+  ctx.textAlign = 'left';
+  ctx.fillText(`🐾 ${game.hits}`, box.x + 10, layout.hudY);
+  if (t <= 10) { ctx.globalAlpha = 0.95; ctx.fillStyle = rgba(GOLD); }
+  ctx.textAlign = 'right';
+  ctx.fillText(fmtTime(Math.ceil(t)), box.x + box.w - 10, layout.hudY);
+  ctx.globalAlpha = 1;
+}
+function drawDebug() {
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.7;
+  ctx.strokeStyle = '#5eead4';
+  ctx.beginPath(); ctx.arc(ball.x, ballY(), ball.r + PAW_R + TAP_SLOP, 0, TAU); ctx.stroke();
+  ctx.strokeStyle = '#ff8e72';
+  for (const p of pointers.values()) { ctx.beginPath(); ctx.arc(p.x, p.y, PAW_R, 0, TAU); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#f6ecdc'; ctx.font = `600 12px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(`${ball.mode} · ${Math.round(Math.hypot(ball.vx, ball.vy))} px/s · swats ${game.swats}`, box.x + 10, box.y + box.h - 12);
+}
+function render() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.drawImage(bg, 0, 0);
+  ctx.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
+  drawRipples();
+  drawTrail();
+  drawBall();
+  drawSparks();
+  if (game.state === 'play') drawHud();
+  if (DEBUG) drawDebug();
+}
+
+/* ---------- game flow ---------- */
+const FLAVOUR = [
+  [0, ['His Lordship found the ball beneath his notice.', 'A dignified abstention.']],
+  [1, ['A gentle warm-up.', 'The ball has been… acknowledged.']],
+  [10, ['The ball has been put on notice.', 'Respectable paw-work.']],
+  [30, ['A most regal performance.', 'The court is impressed.']],
+  [60, ['The ball fears him now.', 'A lord among cats.']],
+  [100, ['Legendary. Bards will sing of this.', 'The ball has requested a transfer.']]
+];
+function flavourFor(hits) {
+  let lines = FLAVOUR[0][1];
+  for (const [min, l] of FLAVOUR) if (hits >= min) lines = l;
+  return pick(lines);
+}
+function countUp(el, target) {
+  const t0 = performance.now(), ms = 300 + Math.min(900, target * 12);
+  const step = now => {
+    const k = Math.min(1, (now - t0) / ms);
+    el.textContent = Math.round(target * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) requestAnimationFrame(step);
+    else if (target > 0 && el.animate) el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.12)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'ease-out' });
+  };
+  step(t0);
+}
+function lockButtons() {
+  clearTimeout(lockTimer);
+  againBtn.classList.remove('locked');
+  settingsBtn.disabled = false; settingsBtn.style.opacity = '';
+  if (AGAIN_LOCK_MS <= 0) return;
+  againBtn.style.setProperty('--lock-ms', `${AGAIN_LOCK_MS}ms`);
+  void againBtn.offsetWidth;   // restart the fill animation
+  againBtn.classList.add('locked');
+  settingsBtn.disabled = true; settingsBtn.style.opacity = '0.35';
+  lockTimer = setTimeout(() => {
+    againBtn.classList.remove('locked');
+    settingsBtn.disabled = false; settingsBtn.style.opacity = '';
+  }, AGAIN_LOCK_MS);
+}
+async function requestWakeLock() {
+  if (wakeLock || !('wakeLock' in navigator)) return;
+  try {
+    const lock = await navigator.wakeLock.request('screen');
+    wakeLock = lock;
+    lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+  } catch (e) { /* unsupported or refused: Guided Access's auto-lock setting covers this */ }
+}
+function releaseWakeLock() {
+  const lock = wakeLock;
+  wakeLock = null;
+  if (lock) lock.release().catch(() => {});
+}
+function startGame() {
+  Sound.init();
+  requestWakeLock();
+  Object.assign(game, { state: 'play', timeLeft: GAME_SECONDS, hits: 0, swats: 0, hitSwats: 0,
+    streak: 0, bestStreak: 0, buckets: new Array(BUCKETS).fill(0) });
+  swat = null; lastHitAt = -1e9; pointers.clear();
+  fx.parts.length = 0; fx.ripples.length = 0; fx.floats.length = 0;
+  clearTimeout(lockTimer);
+  startEl.classList.add('hidden');
+  endEl.classList.add('hidden');
+  if (ball.mode === 'rest' || Math.hypot(ball.vx, ball.vy) < ball.cruise * 0.5) dart(true);
+  Sound.startJingle();
+}
+function endGame() {
+  game.state = 'end';
+  swat = null; pointers.clear();
+  ball.mode = 'rest';   // nothing moving under the buttons, so he loses interest
+  releaseWakeLock();
+  Sound.endJingle();
+
+  const record = lifetime.games > 0 && game.hits > lifetime.bestHits;
+  lifetime.games++;
+  lifetime.totalHits += game.hits;
+  lifetime.bestHits = Math.max(lifetime.bestHits, game.hits);
+  lifetime.bestStreak = Math.max(lifetime.bestStreak, game.bestStreak);
+  save(KEY_STATS, lifetime);
+
+  countUp($('#scoreNum'), game.hits);
+  $('#flavour').textContent = flavourFor(game.hits);
+  $('#record').hidden = !record;
+  $('#statAcc').textContent = game.swats ? `${Math.round((100 * game.hitSwats) / game.swats)}%` : '–';
+  $('#statStreak').textContent = game.bestStreak;
+  $('#statSwats').textContent = game.swats;
+  const spark = $('#spark'), peak = Math.max(1, ...game.buckets);
+  spark.textContent = '';
+  for (const v of game.buckets) {
+    const bar = document.createElement('i');
+    if (v) bar.style.height = `${Math.max(10, (v / peak) * 100)}%`;
+    else { bar.className = 'zero'; bar.style.height = '3px'; }
+    spark.appendChild(bar);
+  }
+  const g = lifetime.games;
+  $('#lifetime').textContent = `All-time best ${lifetime.bestHits} · longest streak ${lifetime.bestStreak} · ${lifetime.totalHits} hits over ${g} game${g === 1 ? '' : 's'}`;
+  endEl.scrollTop = 0;
+  endEl.classList.remove('hidden');
+  lockButtons();
+}
+function showSettings() {
+  game.state = 'start';
+  ball.mode = 'cruise'; ball.modeT = rand(2, 4);
+  endEl.classList.add('hidden');
+  startEl.scrollTop = 0;
+  startEl.classList.remove('hidden');
+}
+
+/* ---------- wiring ---------- */
+document.querySelectorAll('[data-name]').forEach(el => { el.textContent = CAT_NAME; });
+document.title = `${CAT_NAME} vs. The Ball`;
+$('#mins').textContent = +(GAME_SECONDS / 60).toFixed(1);
+$('#axisEnd').textContent = fmtTime(GAME_SECONDS);
+
+const swatchBox = document.querySelector('.swatches');
+for (const [key, hex] of Object.entries(COLOURS)) {
+  const b = document.createElement('button');
+  b.className = 'btn'; b.dataset.value = key; b.style.background = hex;
+  b.setAttribute('aria-label', `${key} ball`);
+  swatchBox.appendChild(b);
+}
+document.querySelectorAll('[data-key]').forEach(group => group.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const key = group.dataset.key;
+  settings[key] = btn.dataset.value;
+  applySettings(true);
+  Sound.init();
+  if (key === 'volume') Sound.chirp(3);
+  else { ball.vz = Math.max(ball.vz, 200 * layout.f); ball.squash = 0.18; }   // little hop to show the change
+}));
+$('#startBtn').addEventListener('click', startGame);
+againBtn.addEventListener('click', startGame);
+settingsBtn.addEventListener('click', showSettings);
+
+canvas.addEventListener('pointerdown', onDown);
+canvas.addEventListener('pointermove', onMove);
+canvas.addEventListener('pointerup', onUp);
+canvas.addEventListener('pointercancel', onUp);
+// belt and braces against iOS scrolling, zooming and long-press menus
+['touchstart', 'touchmove', 'touchend'].forEach(t => canvas.addEventListener(t, e => e.preventDefault(), { passive: false }));
+['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { pointers.clear(); return; }
+  Sound.resume();
+  if (game.state === 'play') requestWakeLock();
+});
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 300));
+
+// home-screen icon drawn in code (iOS reads it when you tap Add to Home Screen)
+(() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 180;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(72, 64, 6, 90, 90, 60);
+  g.fillStyle = '#1a235b'; g.fillRect(0, 0, 180, 180);
+  gr.addColorStop(0, '#fff3c4'); gr.addColorStop(0.5, '#ffd447'); gr.addColorStop(1, '#a8861c');
+  g.fillStyle = gr; g.beginPath(); g.arc(90, 90, 60, 0, TAU); g.fill();
+  const link = document.createElement('link');
+  link.rel = 'apple-touch-icon'; link.href = c.toDataURL('image/png');
+  document.head.appendChild(link);
+})();
+
+/* ---------- main loop ---------- */
+function update(dt) {
+  if (game.state === 'play') {
+    game.timeLeft -= dt;
+    if (game.timeLeft <= 0) { game.timeLeft = 0; endGame(); }
+  }
+  updateBall(dt);
+  updatePaws(dt);
+  updateFx(dt);
+}
+function frame(t) {
+  const dt = last ? clamp((t - last) / 1000, 0, 0.05) : 0;   // capped, so returning from background doesn't jump
+  last = t;
+  clock = performance.now() / 1000;
+  update(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+
+resize();
+const a0 = rand(0, TAU);
+ball.vx = Math.cos(a0) * ball.cruise; ball.vy = Math.sin(a0) * ball.cruise;
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
