@@ -71,7 +71,7 @@ const P=[
 {n:'Periwinkle paper',m:'l',v:'indigo, pollen gold',c:['#eef0f8','#e1e5f2','#cbd1e6','#1e2340','#646a8c','#4651c4','#93650a','#1e6f6a']}
 ];
 
-const L=h=>{const c=[1,3,5].map(i=>{const v=parseInt(h.substr(i,2),16)/255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126c[0]+.7152c[1]+.0722*c[2]};
+const L=h=>{const c=[1,3,5].map(i=>{const v=parseInt(h.substr(i,2),16)/255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126*c[0]+.7152*c[1]+.0722*c[2]};
 const CR=(a,b)=>{const x=L(a),y=L(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)};
 const css=p=>':root {\n'+p.c.map((h,i)=>'  --'+R[i]+': '+h+';').join('\n')+'\n}';
 
@@ -96,11 +96,11 @@ g.innerHTML=P.map(card).join('');
 
 function flash(c,t){
   const s=c.querySelector('.st'),o=P[c.dataset.i].v;
-  s.textContent=t; clearTimeout(c._t); c.t=setTimeout(()=>s.textContent=o,1600);
+  s.textContent=t; clearTimeout(c._t); c._t=setTimeout(()=>s.textContent=o,1600);
 }
 function legacyCopy(t){
   const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta);
-  ta.select(); let ok=false; try{ok=document.execCommand('copy')}catch(){}
+  ta.select(); let ok=false; try{ok=document.execCommand('copy')}catch(_){}
   ta.remove(); return ok;
 }
 function copy(t,c,lab){
@@ -120,8 +120,8 @@ g.addEventListener('click',e=>{
 const bs=document.querySelectorAll('[data-f]');
 bs.forEach(b=>b.addEventListener('click',()=>{
   const f=b.dataset.f;
-  bs.forEach(x=>x.classList.toggle('on',x=b));
-  g.querySelectorAll('.pc').forEach(c=>c.style.display=(f='all'||c.dataset.m===f)?'':'none');
+  bs.forEach(x=>x.classList.toggle('on',x===b));
+  g.querySelectorAll('.pc').forEach(c=>c.style.display=(f==='all'||c.dataset.m===f)?'':'none');
 }));
 </script>
 </body>
