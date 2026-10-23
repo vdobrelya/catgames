@@ -1,0 +1,129 @@
+palletes.html
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Palette options</title>
+<style>
+:root{
+  --page:#262626; --page-text:#ddd; --page-muted:#999; --page-line:#444;
+  --font-sans:system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-voice:"Iowan Old Style",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:24px;background:var(--page);color:var(--page-text);font-family:var(--font-sans)}
+.wrap{max-width:1280px;margin:0 auto}
+.bar{display:flex;gap:8px;margin:0 0 16px;align-items:center;flex-wrap:wrap}
+.bar button{font:inherit;font-size:14px;padding:6px 14px;border-radius:8px;border:0.5px solid var(--page-line);background:transparent;color:var(--page-text);cursor:pointer}
+.bar button:hover,.bar button.on{background:#333}
+.hint{font-size:13px;color:var(--page-muted);margin-left:auto}
+.pg{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.pc{border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.6}
+.pc h4{margin:2px 0 6px;font-size:18px;font-weight:500;font-family:var(--font-voice)}
+.pc pre{margin:10px 0;padding:8px 10px;border-radius:6px;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap}
+.sw{display:flex;height:22px;border-radius:4px;overflow:hidden;margin-top:12px;cursor:pointer}
+.sw span{flex:1}
+.tg{display:inline-block;font-size:11px;padding:0 8px;border-radius:99px;margin-right:4px;font-family:var(--font-mono)}
+.mt{font-size:12px;font-family:var(--font-mono)}
+.ft{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:10px;font-size:12px}
+.cb{cursor:pointer;text-decoration:underline;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <button data-f="all" class="on">All</button>
+    <button data-f="d">Dark (18)</button>
+    <button data-f="l">Light (8)</button>
+    <span class="hint">Click a swatch to copy hex, or "copy css" for a :root block</span>
+  </div>
+  <div class="pg" id="grid"></div>
+</div>
+<script>
+const R=['bg','surface','border','text','muted','link','heading','accent'];
+const P=[
+{n:'Specimen green',m:'d',v:'spore blue, coral, bottle green',c:['#1d2f2a','#253a34','#345048','#ede4cf','#9cad9f','#63bcd6','#ec6a3f','#cfae8c']},
+{n:'Copper velvet',m:'d',v:'flocked green, copper line',c:['#181f1c','#212a26','#303c37','#e8dccd','#919c94','#eeb08f','#d2896a','#8fae9c']},
+{n:'Night ficus',m:'d',v:'teal leaf, pink vein, indigo',c:['#16132a','#1f1b37','#2e294b','#e9f0f0','#9893b8','#45c4c2','#e88dcc','#7d9bf0']},
+{n:'Sumi and straw',m:'d',v:'ink, straw label, seal red',c:['#1a1814','#23201a','#37322a','#ede1ba','#9d947b','#ef5b4f','#e3d18f','#b9a46c']},
+{n:'Agar',m:'d',v:'chartreuse on green-black',c:['#111811','#192219','#283528','#e2e8d5','#8a9a84','#a6d158','#dbc58c','#62b075']},
+{n:'Tapestry dusk',m:'d',v:'vermilion, pale blue, lavender',c:['#1d1a23','#26222e','#373140','#ece4db','#a59cae','#92b3e3','#ed6f43','#bca6d9']},
+{n:'Wet graphite',m:'d',v:'graphite, moss, rust',c:['#1b1d1c','#242726','#333836','#dce0da','#8e958f','#a8bd6f','#cf7a52','#86a9a0']},
+{n:'Benthic',m:'d',v:'coral, aqua, plankton',c:['#0b1620','#12212d','#1d3242','#d9e8e7','#7f9da4','#ff8d68','#82e0d4','#e8d47c']},
+{n:'Periwinkle pond',m:'d',v:'petals and pollen on water',c:['#0f2226','#163035','#224148','#e5eef4','#8aa7b0','#aeb7ff','#f3ca52','#63ccc2']},
+{n:'Darkroom',m:'d',v:'safelight amber, sepia',c:['#1a1510','#241d16','#3a2f24','#ecdcc0','#a18d71','#e6a95a','#df6447','#b8a47c']},
+{n:'Oxblood library',m:'d',v:'brass, rose, green felt',c:['#1d1213','#28191b','#3c2728','#f0e0d5','#a98f8a','#e9b24e','#de7d72','#92b79d']},
+{n:'Xanthoria',m:'d',v:'orange lichen on slate',c:['#22262b','#2a2f36','#3a4149','#e0e5e9','#949ca5','#c9db6c','#f39c5c','#9cc6cb']},
+{n:'Noctiluca',m:'d',v:'bioluminescent, near-black',c:['#070d14','#0e1720','#1a2633','#d0e4eb','#6f8b9a','#72f0c6','#b8a1ff','#ffd47e']},
+{n:'Aubergine and mustard',m:'d',v:'seventies, but nocturnal',c:['#1f1626','#291e32','#3c2e48','#f1e7f0','#aa98b5','#e8bb3d','#ff917c','#9cd3ba']},
+{n:'Heather and frost',m:'d',v:'nord-adjacent, warmer',c:['#262b33','#2e343e','#3e4552','#e6e9ef','#9ba3b4','#9fcac7','#dba9b6','#cdb87e']},
+{n:'Lapis',m:'d',v:'gold leaf on ultramarine',c:['#10142e','#181d3e','#262c56','#eeedf6','#9c9fc6','#f3c350','#ff806c','#92d2e2']},
+{n:'Verdigris',m:'d',v:'patina on dark bronze',c:['#1a1a15','#23231c','#36362b','#e9e5d6','#9b977f','#72c6aa','#d9a05e','#b9c5a1']},
+{n:'Poppy and ash',m:'d',v:'one loud colour',c:['#232221','#2c2b29','#3e3c39','#e9e6e0','#9b978f','#ff6d4c','#f5efe6','#c8c0a2']},
+{n:'Parchment and sepia',m:'l',v:'matches the tree sheets',c:['#efe1c3','#e6d5b0','#d2bf96','#2d2317','#6c5d46','#a3381f','#4a3620','#55632a']},
+{n:'Washi and seal',m:'l',v:'straw, sumi, seal, indigo',c:['#f3ecd1','#e9e0bd','#d5ca9e','#1c1a16','#6a634b','#c32f2a','#2b3a62','#6e5f26']},
+{n:'Herbarium',m:'l',v:'mould green, wood, paper',c:['#f2f0e9','#e7e5db','#d3d0c2','#1e291b','#676e60','#2d7638','#82542a','#4f6c17']},
+{n:'Tapestry day',m:'l',v:'vermilion, dusty blue',c:['#f4efe9','#ebe4dc','#dbd1c6','#2a2533','#686174','#b13f1b','#4f64a0','#6d5a93']},
+{n:'Variegated',m:'l',v:'mint, teal, magenta vein',c:['#eff5f2','#e1ebe7','#cbdbd6','#1a2238','#626b84','#0b7273','#ad3787','#3a50ad']},
+{n:'Bone and graphite',m:'l',v:'moss and sienna on bone',c:['#ecebe5','#e1e0d9','#cecbc2','#25272a','#636568','#4a6a3a','#3b4a54','#9a4e2b']},
+{n:'Specimen cream',m:'l',v:'bottle-green ink, coral',c:['#f1ead8','#e7dec6','#d5c9ae','#1d2f2a','#56645c','#17698a','#c0411c','#3d6a5c']},
+{n:'Periwinkle paper',m:'l',v:'indigo, pollen gold',c:['#eef0f8','#e1e5f2','#cbd1e6','#1e2340','#646a8c','#4651c4','#93650a','#1e6f6a']}
+];
+
+const L=h=>{const c=[1,3,5].map(i=>{const v=parseInt(h.substr(i,2),16)/255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126c[0]+.7152c[1]+.0722*c[2]};
+const CR=(a,b)=>{const x=L(a),y=L(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)};
+const css=p=>':root {\n'+p.c.map((h,i)=>'  --'+R[i]+': '+h+';').join('\n')+'\n}';
+
+function card(p,idx){
+  const [bg,su,li,tx,mu,a1,a2,a3]=p.c;
+  const r=(k,v)=>{const n=CR(v,bg);return k+' '+n.toFixed(1)+(n<4.5?' (low)':'')};
+  return `<div class="pc" data-m="${p.m}" data-i="${idx}" style="background:${bg};color:${tx};border:0.5px solid ${li}">
+<div class="mt" style="color:${mu}">23 oct 2026 · entry 014</div>
+<h4 style="color:${a2}">Vigour sweep, round two</h4>
+<div>Uncapped canopies read better at thumbnail size. Depth 2 thins the crown too much, <span style="color:${a1};text-decoration:underline">full grid here</span>.</div>
+<pre style="background:${su};border:0.5px solid ${li};color:${tx}"><span style="color:${a3}">vigour</span>=0.4  <span style="color:${a3}">depth</span>=1  <span style="color:${mu}"># cap off</span></pre>
+<span class="tg" style="color:${a3};border:0.5px solid ${a3}">trees</span><span class="tg" style="color:${a1};border:0.5px solid ${a1}">sweep</span>
+<div class="sw" style="border:0.5px solid ${li}">${p.c.map((h,i)=>`<span data-h="${h}" data-r="${R[i]}" title="${R[i]} ${h}" style="background:${h}"></span>`).join('')}</div>
+<div class="ft"><span style="font-weight:500">${p.n}</span><span class="st" style="color:${mu};text-align:right">${p.v}</span></div>
+<div class="ft" style="margin-top:2px;font-family:var(--font-mono);font-size:11px;color:${mu}"><span>${r('text',tx)} · ${r('muted',mu)} · ${r('link',a1)}</span><span class="cb">copy css</span></div>
+<pre class="cs" style="display:none;background:${su};border:0.5px solid ${li};color:${tx};user-select:all">${css(p)}</pre>
+</div>`;
+}
+
+const g=document.getElementById('grid');
+g.innerHTML=P.map(card).join('');
+
+function flash(c,t){
+  const s=c.querySelector('.st'),o=P[c.dataset.i].v;
+  s.textContent=t; clearTimeout(c._t); c.t=setTimeout(()=>s.textContent=o,1600);
+}
+function legacyCopy(t){
+  const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta);
+  ta.select(); let ok=false; try{ok=document.execCommand('copy')}catch(){}
+  ta.remove(); return ok;
+}
+function copy(t,c,lab){
+  const done=ok=>flash(c,ok?'copied '+lab:'select text to copy');
+  if(navigator.clipboard&&window.isSecureContext){
+    navigator.clipboard.writeText(t).then(()=>done(true),()=>done(legacyCopy(t)));
+  } else done(legacyCopy(t));
+}
+
+g.addEventListener('click',e=>{
+  const c=e.target.closest('.pc'); if(!c) return;
+  const s=e.target.closest('[data-h]');
+  if(s){copy(s.dataset.h,c,s.dataset.r+' '+s.dataset.h);return}
+  if(e.target.closest('.cb')){c.querySelector('.cs').style.display='block';copy(css(P[c.dataset.i]),c,'css block')}
+});
+
+const bs=document.querySelectorAll('[data-f]');
+bs.forEach(b=>b.addEventListener('click',()=>{
+  const f=b.dataset.f;
+  bs.forEach(x=>x.classList.toggle('on',x=b));
+  g.querySelectorAll('.pc').forEach(c=>c.style.display=(f='all'||c.dataset.m===f)?'':'none');
+}));
+</script>
+</body>
+</html>
